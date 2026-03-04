@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Album, Photo } from "../backend.d";
+import { createActorWithConfig } from "../config";
 import { useActor } from "./useActor";
+import { useInternetIdentity } from "./useInternetIdentity";
 
 // ── Query Hooks ───────────────────────────────────────────────────────────────
 
@@ -70,9 +72,49 @@ export function useIsAdmin() {
     queryKey: ["isAdmin"],
     queryFn: async () => {
       if (!actor) return false;
-      return actor.isCallerAdmin();
+      try {
+        return await actor.isCallerAdmin();
+      } catch {
+        return false;
+      }
     },
     enabled: !!actor && !isFetching,
+    retry: false,
+  });
+}
+
+export function useIsRegistered() {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["isRegistered"],
+    queryFn: async () => {
+      if (!actor) return false;
+      try {
+        await actor.getCallerUserRole();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    enabled: !!actor && !isFetching,
+    retry: false,
+  });
+}
+
+export function useInitializeAdmin() {
+  const { identity } = useInternetIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (adminToken: string) => {
+      if (!identity) throw new Error("No autenticado");
+      const actor = await createActorWithConfig({ agentOptions: { identity } });
+      await actor._initializeAccessControlWithSecret(adminToken);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isRegistered"] });
+      queryClient.invalidateQueries({ queryKey: ["actor"] });
+    },
   });
 }
 

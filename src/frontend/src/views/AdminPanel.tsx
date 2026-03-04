@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Check,
   ImagePlus,
+  KeyRound,
   Loader2,
   LogIn,
   Pencil,
@@ -62,7 +63,9 @@ import {
   useCreateAlbum,
   useDeleteAlbum,
   useDeletePhoto,
+  useInitializeAdmin,
   useIsAdmin,
+  useIsRegistered,
   usePhotos,
   useUpdateAlbum,
   useUpdatePhoto,
@@ -974,16 +977,115 @@ function PhotosTab({
   );
 }
 
+// ── Activation Form ──────────────────────────────────────────────────────────
+
+function ActivationForm({ onClear }: { onClear: () => void }) {
+  const [token, setToken] = useState("");
+  const initializeAdmin = useInitializeAdmin();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token.trim()) return;
+    initializeAdmin.mutate(token.trim(), {
+      onSuccess: () => {
+        toast.success("Acceso de administrador activado");
+      },
+      onError: (err) => {
+        toast.error(
+          `Token incorrecto: ${err instanceof Error ? err.message : "Error desconocido"}`,
+        );
+      },
+    });
+  };
+
+  return (
+    <main
+      className="min-h-screen flex items-center justify-center px-6"
+      data-ocid="admin.page"
+    >
+      <motion.div
+        className="max-w-sm w-full text-center space-y-6"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+      >
+        <div
+          className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.15 0.04 285), oklch(0.22 0.08 290))",
+          }}
+        >
+          <KeyRound className="w-7 h-7 text-gold" />
+        </div>
+        <div>
+          <h1 className="font-display text-2xl font-medium text-foreground mb-2">
+            Activar cuenta de admin
+          </h1>
+          <p className="text-text-dim text-sm font-sans">
+            Introduce el token de administrador para activar tu cuenta. Puedes
+            encontrarlo en la sección "Spec" de tu proyecto en Caffeine.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3 text-left">
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="admin-token"
+              className="text-text-dim text-xs uppercase tracking-widest font-mono"
+            >
+              Token de administrador
+            </Label>
+            <Input
+              id="admin-token"
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Pega tu token aquí..."
+              className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle font-mono text-sm"
+              autoComplete="off"
+              data-ocid="admin.input"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={initializeAdmin.isPending || !token.trim()}
+            className="w-full bg-primary text-primary-foreground hover:bg-gold-glow gap-2"
+            data-ocid="admin.primary_button"
+          >
+            {initializeAdmin.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Check className="w-4 h-4" />
+            )}
+            {initializeAdmin.isPending ? "Activando..." : "Activar acceso"}
+          </Button>
+        </form>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClear}
+          className="text-text-dim hover:text-foreground w-full"
+          data-ocid="admin.secondary_button"
+        >
+          Cerrar sesión
+        </Button>
+      </motion.div>
+    </main>
+  );
+}
+
 // ── Main Admin Panel ─────────────────────────────────────────────────────────
 
 export function AdminPanel() {
   const { login, clear, identity, isLoggingIn, isInitializing } =
     useInternetIdentity();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
+  const { data: isRegistered, isLoading: registeredLoading } =
+    useIsRegistered();
 
   const isLoggedIn = !!identity;
 
-  if (isInitializing || adminLoading) {
+  if (isInitializing || adminLoading || registeredLoading) {
     return (
       <div
         className="flex items-center justify-center min-h-[60vh]"
@@ -1047,7 +1149,12 @@ export function AdminPanel() {
     );
   }
 
-  // Logged in but not admin
+  // Logged in but not yet registered -> show activation form
+  if (!isRegistered) {
+    return <ActivationForm onClear={clear} />;
+  }
+
+  // Registered but not admin
   if (!isAdmin) {
     return (
       <main
