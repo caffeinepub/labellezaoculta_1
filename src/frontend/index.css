@@ -1,0 +1,268 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Fraunces (display serif) ─────────────────────────── */
+@font-face {
+  font-family: "Fraunces";
+  src: url("/assets/fonts/Fraunces.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Instrument Serif (editorial serif) ──────────────── */
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/assets/fonts/InstrumentSerif.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── General Sans (body sans) ────────────────────────── */
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Geist Mono (mono) ───────────────────────────────── */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/assets/fonts/GeistMono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  /* ── Dark-first design tokens (photography / cinematic) ── */
+  :root {
+    --radius: 0.25rem;
+
+    /* Core: near-black ground */
+    --background: 0.082 0.004 285;
+    --foreground: 0.93 0.006 90;
+
+    /* Cards: slightly lifted surface */
+    --card: 0.11 0.005 285;
+    --card-foreground: 0.93 0.006 90;
+
+    /* Popover */
+    --popover: 0.13 0.006 285;
+    --popover-foreground: 0.93 0.006 90;
+
+    /* Primary: warm gold/amber */
+    --primary: 0.78 0.14 75;
+    --primary-foreground: 0.09 0.004 285;
+
+    /* Secondary: cool dark surface */
+    --secondary: 0.16 0.006 285;
+    --secondary-foreground: 0.82 0.006 90;
+
+    /* Muted: dim text / fills */
+    --muted: 0.15 0.005 285;
+    --muted-foreground: 0.55 0.01 285;
+
+    /* Accent: copper-rose highlight */
+    --accent: 0.22 0.008 285;
+    --accent-foreground: 0.93 0.006 90;
+
+    /* Destructive: muted crimson */
+    --destructive: 0.58 0.19 25;
+    --destructive-foreground: 0.97 0 0;
+
+    /* Borders / inputs */
+    --border: 0.22 0.006 285;
+    --input: 0.19 0.007 285;
+    --ring: 0.78 0.14 75;
+
+    /* Charts */
+    --chart-1: 0.78 0.14 75;
+    --chart-2: 0.65 0.12 185;
+    --chart-3: 0.55 0.08 265;
+    --chart-4: 0.82 0.18 85;
+    --chart-5: 0.70 0.15 55;
+
+    /* Sidebar */
+    --sidebar: 0.1 0.005 285;
+    --sidebar-foreground: 0.93 0.006 90;
+    --sidebar-primary: 0.78 0.14 75;
+    --sidebar-primary-foreground: 0.09 0.004 285;
+    --sidebar-accent: 0.16 0.006 285;
+    --sidebar-accent-foreground: 0.82 0.006 90;
+    --sidebar-border: 0.22 0.006 285;
+    --sidebar-ring: 0.78 0.14 75;
+
+    /* App-specific custom tokens */
+    --gold: 0.78 0.14 75;
+    --gold-dim: 0.62 0.11 75;
+    --gold-glow: 0.88 0.16 78;
+    --surface-1: 0.11 0.005 285;
+    --surface-2: 0.15 0.006 285;
+    --surface-3: 0.20 0.008 285;
+    --text-dim: 0.55 0.01 285;
+    --text-subtle: 0.40 0.008 285;
+  }
+
+  /* Apply dark mode to html root for color-scheme */
+  html {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-color: oklch(0.082 0.004 285);
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: oklch(0.78 0.14 75 / 0.3);
+    color: oklch(0.97 0.006 90);
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid oklch(var(--gold));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Masonry layout */
+  .masonry-grid {
+    column-fill: balance;
+    column-gap: 0.75rem;
+  }
+
+  .masonry-responsive {
+    column-count: 2;
+    column-fill: balance;
+    column-gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .masonry-responsive {
+      column-count: 3;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .masonry-responsive {
+      column-count: 4;
+    }
+  }
+
+  .masonry-item {
+    break-inside: avoid;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Film grain overlay */
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+  }
+
+  /* Gold text gradient */
+  .text-gold-gradient {
+    background: linear-gradient(135deg, oklch(0.88 0.16 78), oklch(0.68 0.12 68));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Subtle grid background */
+  .bg-grid {
+    background-image:
+      linear-gradient(oklch(0.22 0.006 285 / 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.22 0.006 285 / 0.4) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Photo card overlay */
+  .photo-overlay {
+    background: linear-gradient(
+      to top,
+      oklch(0.07 0.004 285 / 0.95) 0%,
+      oklch(0.07 0.004 285 / 0.4) 40%,
+      transparent 100%
+    );
+  }
+
+  /* ── Photo card premium treatment ──────────────────────── */
+  /* Suppress scale — use filter instead for editorial feel  */
+  .photo-card-root {
+    transform: translateZ(0); /* GPU layer */
+  }
+
+  .photo-card-img {
+    filter: brightness(0.92) saturate(0.95);
+    transition: filter 0.55s ease, opacity 0.6s ease;
+  }
+
+  .photo-card-root:hover .photo-card-img {
+    filter: brightness(1.04) saturate(1.08) contrast(1.02);
+  }
+
+  /* Gold hairline inset frame */
+  .photo-card-frame {
+    box-shadow: inset 0 0 0 0px oklch(0.78 0.14 75 / 0);
+    transition: box-shadow 0.45s ease, opacity 0.45s ease;
+  }
+
+  .photo-card-root:hover .photo-card-frame {
+    box-shadow: inset 0 0 0 1.5px oklch(0.78 0.14 75 / 0.35);
+    opacity: 1;
+  }
+
+  /* ── Hero gold rule signature animation ─────────────────── */
+  @keyframes rule-grow {
+    from { width: 0; opacity: 0; }
+    to   { width: 3rem; opacity: 1; }
+  }
+
+  .hero-rule {
+    display: block;
+    height: 1px;
+    width: 0;
+    background: linear-gradient(to right, oklch(0.78 0.14 75), oklch(0.78 0.14 75 / 0));
+    animation: rule-grow 0.7s 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(0.11 0.005 285);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.25 0.008 285);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.78 0.14 75 / 0.5);
+  }
+}
