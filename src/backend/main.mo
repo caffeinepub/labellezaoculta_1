@@ -1,18 +1,16 @@
 import Map "mo:core/Map";
 import Array "mo:core/Array";
 import Int "mo:core/Int";
-import Text "mo:core/Text";
 import Order "mo:core/Order";
 import Time "mo:core/Time";
 import Principal "mo:core/Principal";
-import Iter "mo:core/Iter";
 import MixinStorage "blob-storage/Mixin";
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
 import Runtime "mo:core/Runtime";
+import Migration "migration";
 
-
-
+(with migration = Migration.run)
 actor {
   include MixinStorage();
 
@@ -63,6 +61,12 @@ actor {
   let photos = Map.empty<PhotoId, Photo>();
   let userProfiles = Map.empty<Principal, UserProfile>();
   var seeded = false;
+
+  // Registration Function (NO auth check - anyone can call)
+  public shared ({ caller }) func registerAsAdmin() : async () {
+    // Pass empty strings for token arguments (unused in this context)
+    AccessControl.initialize(accessControlState, caller, "", "");
+  };
 
   // User Profile Functions
 

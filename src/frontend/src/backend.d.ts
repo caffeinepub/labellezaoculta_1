@@ -48,6 +48,7 @@ export interface backendInterface {
     getPhotosByAlbum(albumId: AlbumId): Promise<Array<Photo>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    registerAsAdmin(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     seedData(): Promise<void>;
     updateAlbum(id: AlbumId, name: string, description: string, coverBlobId: string | null): Promise<boolean>;

@@ -74,6 +74,7 @@ export interface _SERVICE {
   'getPhotosByAlbum' : ActorMethod<[AlbumId], Array<Photo>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'registerAsAdmin' : ActorMethod<[], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'seedData' : ActorMethod<[], undefined>,
   'updateAlbum' : ActorMethod<

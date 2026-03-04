@@ -118,6 +118,23 @@ export function useInitializeAdmin() {
   });
 }
 
+export function useRegisterAsAdmin() {
+  const { identity } = useInternetIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!identity) throw new Error("No autenticado");
+      const actor = await createActorWithConfig({ agentOptions: { identity } });
+      await actor.registerAsAdmin();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isRegistered"] });
+      queryClient.invalidateQueries({ queryKey: ["actor"] });
+    },
+  });
+}
+
 // ── Mutation Hooks ────────────────────────────────────────────────────────────
 
 export function useCreateAlbum() {

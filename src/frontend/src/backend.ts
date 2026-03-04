@@ -148,6 +148,7 @@ export interface backendInterface {
     getPhotosByAlbum(albumId: AlbumId): Promise<Array<Photo>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    registerAsAdmin(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     seedData(): Promise<void>;
     updateAlbum(id: AlbumId, name: string, description: string, coverBlobId: string | null): Promise<boolean>;
@@ -447,6 +448,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.isCallerAdmin();
+            return result;
+        }
+    }
+    async registerAsAdmin(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.registerAsAdmin();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.registerAsAdmin();
             return result;
         }
     }

@@ -42,7 +42,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Check,
   ImagePlus,
-  KeyRound,
   Loader2,
   LogIn,
   Pencil,
@@ -53,7 +52,7 @@ import {
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Album, Photo } from "../backend.d";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
@@ -63,10 +62,10 @@ import {
   useCreateAlbum,
   useDeleteAlbum,
   useDeletePhoto,
-  useInitializeAdmin,
   useIsAdmin,
   useIsRegistered,
   usePhotos,
+  useRegisterAsAdmin,
   useUpdateAlbum,
   useUpdatePhoto,
 } from "../hooks/useQueries";
@@ -977,26 +976,66 @@ function PhotosTab({
   );
 }
 
-// ── Activation Form ──────────────────────────────────────────────────────────
+// ── Auto-Registration Screen ─────────────────────────────────────────────────
 
-function ActivationForm({ onClear }: { onClear: () => void }) {
-  const [token, setToken] = useState("");
-  const initializeAdmin = useInitializeAdmin();
+function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
+  const registerAsAdmin = useRegisterAsAdmin();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token.trim()) return;
-    initializeAdmin.mutate(token.trim(), {
-      onSuccess: () => {
-        toast.success("Acceso de administrador activado");
-      },
-      onError: (err) => {
-        toast.error(
-          `Token incorrecto: ${err instanceof Error ? err.message : "Error desconocido"}`,
-        );
+  const mutate = registerAsAdmin.mutate;
+  useEffect(() => {
+    mutate(undefined, {
+      onError: () => {
+        // Error is handled in the render below
       },
     });
-  };
+  }, [mutate]);
+
+  if (registerAsAdmin.isError) {
+    return (
+      <main
+        className="min-h-screen flex items-center justify-center px-6"
+        data-ocid="admin.page"
+      >
+        <motion.div
+          className="max-w-sm w-full text-center space-y-6"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          <div
+            className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.22 0.12 25), oklch(0.15 0.08 30))",
+            }}
+          >
+            <ShieldAlert className="w-7 h-7 text-destructive" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-medium text-foreground mb-2">
+              Error de registro
+            </h1>
+            <p className="text-text-dim text-sm font-sans">
+              No se pudo registrar tu cuenta automáticamente.
+            </p>
+            <p className="text-text-subtle font-mono text-xs mt-2">
+              {registerAsAdmin.error instanceof Error
+                ? registerAsAdmin.error.message
+                : "Error desconocido"}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={onClear}
+            className="border-border/50 text-text-dim hover:text-foreground w-full"
+            data-ocid="admin.secondary_button"
+          >
+            Cerrar sesión
+          </Button>
+        </motion.div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -1008,6 +1047,7 @@ function ActivationForm({ onClear }: { onClear: () => void }) {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
+        data-ocid="admin.loading_state"
       >
         <div
           className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
@@ -1016,59 +1056,16 @@ function ActivationForm({ onClear }: { onClear: () => void }) {
               "linear-gradient(135deg, oklch(0.15 0.04 285), oklch(0.22 0.08 290))",
           }}
         >
-          <KeyRound className="w-7 h-7 text-gold" />
+          <Loader2 className="w-7 h-7 text-gold animate-spin" />
         </div>
         <div>
           <h1 className="font-display text-2xl font-medium text-foreground mb-2">
-            Activar cuenta de admin
+            Registrando acceso...
           </h1>
           <p className="text-text-dim text-sm font-sans">
-            Introduce el token de administrador para activar tu cuenta. Puedes
-            encontrarlo en la sección "Spec" de tu proyecto en Caffeine.
+            Configurando tu cuenta de administrador. Por favor espera.
           </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3 text-left">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="admin-token"
-              className="text-text-dim text-xs uppercase tracking-widest font-mono"
-            >
-              Token de administrador
-            </Label>
-            <Input
-              id="admin-token"
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Pega tu token aquí..."
-              className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle font-mono text-sm"
-              autoComplete="off"
-              data-ocid="admin.input"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={initializeAdmin.isPending || !token.trim()}
-            className="w-full bg-primary text-primary-foreground hover:bg-gold-glow gap-2"
-            data-ocid="admin.primary_button"
-          >
-            {initializeAdmin.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-            {initializeAdmin.isPending ? "Activando..." : "Activar acceso"}
-          </Button>
-        </form>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClear}
-          className="text-text-dim hover:text-foreground w-full"
-          data-ocid="admin.secondary_button"
-        >
-          Cerrar sesión
-        </Button>
       </motion.div>
     </main>
   );
@@ -1149,9 +1146,9 @@ export function AdminPanel() {
     );
   }
 
-  // Logged in but not yet registered -> show activation form
+  // Logged in but not yet registered -> auto-register
   if (!isRegistered) {
-    return <ActivationForm onClear={clear} />;
+    return <AutoRegisterScreen onClear={clear} />;
   }
 
   // Registered but not admin
