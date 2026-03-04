@@ -167,10 +167,18 @@ export function useUpdateAlbum() {
       id: string;
       name: string;
       description: string;
-      coverBlobId: string | null;
+      coverBlobId: string | null | undefined;
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.updateAlbum(id, name, description, coverBlobId);
+      const result = await actor.updateAlbum(
+        id,
+        name,
+        description,
+        coverBlobId ?? null,
+      );
+      if (!result)
+        throw new Error("Álbum no encontrado o no se pudo actualizar");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["albums"] });

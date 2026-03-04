@@ -90,6 +90,14 @@ function AlbumFormDialog({
   const [name, setName] = useState(album?.name ?? "");
   const [description, setDescription] = useState(album?.description ?? "");
 
+  // Sync state when album prop changes (e.g. selecting a different album to edit)
+  useEffect(() => {
+    if (open) {
+      setName(album?.name ?? "");
+      setDescription(album?.description ?? "");
+    }
+  }, [open, album]);
+
   // Reset when album changes
   const handleOpen = (v: boolean) => {
     if (v) {
@@ -514,7 +522,7 @@ function AlbumsTab() {
           id: editAlbum.id,
           name,
           description,
-          coverBlobId: editAlbum.coverBlobId ?? null,
+          coverBlobId: editAlbum.coverBlobId ?? undefined,
         },
         {
           onSuccess: () => {

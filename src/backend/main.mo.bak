@@ -128,7 +128,7 @@ actor {
       Runtime.trap("Unauthorized: Only admins can create albums");
     };
 
-    let id = name # "-" # timestamp().toText();
+    let id = name;
     let album : Album = {
       id;
       name;
