@@ -1027,15 +1027,12 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
           </div>
           <div>
             <h1 className="font-display text-2xl font-medium text-foreground mb-2">
-              Error de registro
+              Acceso denegado
             </h1>
             <p className="text-text-dim text-sm font-sans">
-              No se pudo registrar tu cuenta automáticamente.
-            </p>
-            <p className="text-text-subtle font-mono text-xs mt-2">
-              {registerAsAdmin.error instanceof Error
-                ? registerAsAdmin.error.message
-                : "Error desconocido"}
+              Para acceder como administrador, abre la app desde el panel de
+              Caffeine. Eso incluirá automáticamente las credenciales
+              necesarias.
             </p>
           </div>
           <Button
@@ -1074,7 +1071,7 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
         </div>
         <div>
           <h1 className="font-display text-2xl font-medium text-foreground mb-2">
-            Registrando acceso...
+            Verificando acceso...
           </h1>
           <p className="text-text-dim text-sm font-sans">
             Configurando tu cuenta de administrador. Por favor espera.

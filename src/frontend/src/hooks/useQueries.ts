@@ -126,9 +126,8 @@ export function useRegisterAsAdmin() {
     mutationFn: async () => {
       if (!identity) throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
-      // Use the admin token from the URL (caffeineAdminToken) to register as admin.
-      // _initializeAccessControlWithSecret registers the caller with the given token;
-      // if the token matches the canister secret, the caller is granted admin role.
+      // Try with the Caffeine admin token if available (token-based admin registration).
+      // This works even if the user was previously registered as a regular user.
       const adminToken = getSecretParameter("caffeineAdminToken") ?? "";
       await actor._initializeAccessControlWithSecret(adminToken);
     },

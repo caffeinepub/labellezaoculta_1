@@ -128,31 +128,32 @@ function Nav({ currentView, onNavigate }: NavProps) {
             <button
               type="button"
               onClick={clear}
-              className="p-2 transition-all duration-200 rounded-sm text-text-dim hover:text-foreground hover:bg-surface-2"
+              className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-border/30 text-text-dim hover:text-foreground hover:bg-surface-2 flex items-center gap-1.5"
               data-ocid="nav.logout.button"
               aria-label="Cerrar sesión"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-3 h-3" />
+              <span>Salir</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={login}
               disabled={isLoggingIn}
-              className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-gold/30 text-gold hover:bg-gold/10 disabled:opacity-50"
+              className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-gold/40 text-gold hover:bg-gold/10 hover:border-gold/60 disabled:opacity-50 flex items-center gap-1.5"
               data-ocid="nav.login.button"
-              aria-label="Iniciar sesión"
+              aria-label="Iniciar sesión como administrador"
             >
               {isLoggingIn ? (
-                <span className="flex items-center gap-1.5">
+                <>
                   <span className="w-3 h-3 border border-gold/50 border-t-gold rounded-full animate-spin" />
-                  Entrando...
-                </span>
+                  <span>Entrando...</span>
+                </>
               ) : (
-                <span className="flex items-center gap-1.5">
+                <>
                   <LogIn className="w-3 h-3" />
-                  Admin
-                </span>
+                  <span>Admin</span>
+                </>
               )}
             </button>
           )}
