@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Album, Photo } from "../backend.d";
 import { createActorWithConfig } from "../config";
+import { getSecretParameter } from "../utils/urlParams";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
@@ -125,7 +126,11 @@ export function useRegisterAsAdmin() {
     mutationFn: async () => {
       if (!identity) throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
-      await actor.registerAsAdmin();
+      // Use the admin token from the URL (caffeineAdminToken) to register as admin.
+      // _initializeAccessControlWithSecret registers the caller with the given token;
+      // if the token matches the canister secret, the caller is granted admin role.
+      const adminToken = getSecretParameter("caffeineAdminToken") ?? "";
+      await actor._initializeAccessControlWithSecret(adminToken);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });

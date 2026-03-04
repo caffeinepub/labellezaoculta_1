@@ -507,7 +507,10 @@ function AlbumsTab() {
             toast.success("Álbum creado");
             setCreateOpen(false);
           },
-          onError: (e) => toast.error(`Error: ${e.message}`),
+          onError: (e) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(`No se pudo crear el álbum: ${msg}`);
+          },
         },
       );
     },
@@ -529,7 +532,10 @@ function AlbumsTab() {
             toast.success("Álbum actualizado");
             setEditAlbum(null);
           },
-          onError: (e) => toast.error(`Error: ${e.message}`),
+          onError: (e) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(`No se pudo actualizar el álbum: ${msg}`);
+          },
         },
       );
     },
@@ -1085,12 +1091,11 @@ export function AdminPanel() {
   const { login, clear, identity, isLoggingIn, isInitializing } =
     useInternetIdentity();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
-  const { data: isRegistered, isLoading: registeredLoading } =
-    useIsRegistered();
+  useIsRegistered();
 
   const isLoggedIn = !!identity;
 
-  if (isInitializing || adminLoading || registeredLoading) {
+  if (isInitializing || adminLoading) {
     return (
       <div
         className="flex items-center justify-center min-h-[60vh]"
@@ -1154,55 +1159,10 @@ export function AdminPanel() {
     );
   }
 
-  // Logged in but not yet registered -> auto-register
-  if (!isRegistered) {
-    return <AutoRegisterScreen onClear={clear} />;
-  }
-
-  // Registered but not admin
+  // Logged in but not admin → always attempt auto-registration with the admin token.
+  // useActor may have registered the user as #user before this runs, so we always retry.
   if (!isAdmin) {
-    return (
-      <main
-        className="min-h-screen flex items-center justify-center px-6"
-        data-ocid="admin.page"
-      >
-        <motion.div
-          className="max-w-sm w-full text-center space-y-6"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div
-            className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
-            style={{
-              background:
-                "linear-gradient(135deg, oklch(0.22 0.12 25), oklch(0.15 0.08 30))",
-            }}
-          >
-            <ShieldAlert className="w-7 h-7 text-destructive" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-medium text-foreground mb-2">
-              Acceso denegado
-            </h1>
-            <p className="text-text-dim text-sm font-sans">
-              Tu cuenta no tiene privilegios de administrador.
-            </p>
-            <p className="text-text-subtle font-mono text-xs mt-2 break-all">
-              {identity.getPrincipal().toString()}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={clear}
-            className="border-border/50 text-text-dim hover:text-foreground"
-            data-ocid="admin.secondary_button"
-          >
-            Cerrar sesión
-          </Button>
-        </motion.div>
-      </main>
-    );
+    return <AutoRegisterScreen onClear={clear} />;
   }
 
   // Admin panel

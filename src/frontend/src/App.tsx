@@ -85,29 +85,33 @@ function Nav({ currentView, onNavigate }: NavProps) {
           </span>
         </button>
 
-        {/* Desktop links */}
-        <div className="hidden sm:flex items-center gap-1">
-          {navLinks.map((link) => (
-            <button
-              type="button"
-              key={link.label}
-              onClick={() => handleNav(link.view)}
-              className={`px-4 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm ${
-                isActive(link.view)
-                  ? "text-gold bg-primary/10"
-                  : "text-text-dim hover:text-foreground hover:bg-surface-2"
-              }`}
-              data-ocid={`nav.${link.label.toLowerCase()}.link`}
-            >
-              {link.label}
-            </button>
-          ))}
+        {/* Right side: desktop nav links + always-visible auth buttons */}
+        <div className="flex items-center gap-1">
+          {/* Desktop-only nav links */}
+          <div className="hidden sm:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <button
+                type="button"
+                key={link.label}
+                onClick={() => handleNav(link.view)}
+                className={`px-4 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm ${
+                  isActive(link.view)
+                    ? "text-gold bg-primary/10"
+                    : "text-text-dim hover:text-foreground hover:bg-surface-2"
+                }`}
+                data-ocid={`nav.${link.label.toLowerCase()}.link`}
+              >
+                {link.label}
+              </button>
+            ))}
+          </div>
 
+          {/* Always-visible: Admin settings icon (when logged in) */}
           {isLoggedIn && (
             <button
               type="button"
               onClick={() => handleNav({ name: "admin" })}
-              className={`p-2 transition-all duration-200 rounded-sm ml-1 ${
+              className={`p-2 transition-all duration-200 rounded-sm ${
                 currentView.name === "admin"
                   ? "text-gold bg-primary/10"
                   : "text-text-dim hover:text-foreground hover:bg-surface-2"
@@ -119,11 +123,12 @@ function Nav({ currentView, onNavigate }: NavProps) {
             </button>
           )}
 
+          {/* Always-visible: Login/Logout button */}
           {isLoggedIn ? (
             <button
               type="button"
               onClick={clear}
-              className="p-2 transition-all duration-200 rounded-sm ml-1 text-text-dim hover:text-foreground hover:bg-surface-2"
+              className="p-2 transition-all duration-200 rounded-sm text-text-dim hover:text-foreground hover:bg-surface-2"
               data-ocid="nav.logout.button"
               aria-label="Cerrar sesión"
             >
@@ -134,7 +139,7 @@ function Nav({ currentView, onNavigate }: NavProps) {
               type="button"
               onClick={login}
               disabled={isLoggingIn}
-              className="ml-2 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-gold/30 text-gold hover:bg-gold/10 disabled:opacity-50"
+              className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-gold/30 text-gold hover:bg-gold/10 disabled:opacity-50"
               data-ocid="nav.login.button"
               aria-label="Iniciar sesión"
             >
@@ -151,19 +156,23 @@ function Nav({ currentView, onNavigate }: NavProps) {
               )}
             </button>
           )}
-        </div>
 
-        {/* Mobile hamburger */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="sm:hidden text-text-dim hover:text-foreground"
-          onClick={() => setMenuOpen(!menuOpen)}
-          data-ocid="nav.toggle"
-          aria-label="Abrir menú"
-        >
-          {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </Button>
+          {/* Mobile hamburger (for nav links only) */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sm:hidden text-text-dim hover:text-foreground ml-1"
+            onClick={() => setMenuOpen(!menuOpen)}
+            data-ocid="nav.toggle"
+            aria-label="Abrir menú"
+          >
+            {menuOpen ? (
+              <X className="w-5 h-5" />
+            ) : (
+              <Menu className="w-5 h-5" />
+            )}
+          </Button>
+        </div>
       </nav>
 
       {/* Mobile menu */}
