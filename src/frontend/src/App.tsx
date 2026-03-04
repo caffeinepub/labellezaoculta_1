@@ -111,7 +111,7 @@ function Nav({ currentView, onNavigate }: NavProps) {
             <button
               type="button"
               onClick={() => handleNav({ name: "admin" })}
-              className={`p-2 transition-all duration-200 rounded-sm ${
+              className={`px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm flex items-center gap-1.5 ${
                 currentView.name === "admin"
                   ? "text-gold bg-primary/10"
                   : "text-text-dim hover:text-foreground hover:bg-surface-2"
@@ -119,7 +119,8 @@ function Nav({ currentView, onNavigate }: NavProps) {
               data-ocid="nav.admin.link"
               aria-label="Panel de administración"
             >
-              <Settings className="w-3.5 h-3.5" />
+              <Settings className="w-3 h-3" />
+              <span>Admin</span>
             </button>
           )}
 

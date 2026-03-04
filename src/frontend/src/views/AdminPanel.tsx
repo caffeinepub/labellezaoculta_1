@@ -1030,9 +1030,8 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
               Acceso denegado
             </h1>
             <p className="text-text-dim text-sm font-sans">
-              Para acceder como administrador, abre la app desde el panel de
-              Caffeine. Eso incluirá automáticamente las credenciales
-              necesarias.
+              No se pudo registrar como administrador. Cierra sesión, vuelve a
+              entrar con Internet Identity y pulsa "Admin" de nuevo.
             </p>
           </div>
           <Button

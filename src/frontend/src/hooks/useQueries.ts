@@ -126,10 +126,15 @@ export function useRegisterAsAdmin() {
     mutationFn: async () => {
       if (!identity) throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
-      // Try with the Caffeine admin token if available (token-based admin registration).
-      // This works even if the user was previously registered as a regular user.
-      const adminToken = getSecretParameter("caffeineAdminToken") ?? "";
-      await actor._initializeAccessControlWithSecret(adminToken);
+      // First try with the Caffeine admin token if available in the URL/session.
+      const adminToken = getSecretParameter("caffeineAdminToken");
+      if (adminToken) {
+        await actor._initializeAccessControlWithSecret(adminToken);
+      } else {
+        // Fall back to the open registerAsAdmin endpoint which makes the first
+        // authenticated caller the admin without requiring any token.
+        await actor.registerAsAdmin();
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
