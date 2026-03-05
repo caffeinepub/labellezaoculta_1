@@ -210,66 +210,72 @@ export function getSecretFromHash(paramName: string): string | null {
  * @returns The secret value if found, null otherwise
  */
 export function getSecretParameter(paramName: string): string | null {
-  // Try localStorage first (persisted by captureAdminToken before II redirect)
-  const stored = localStorage.getItem("caffeine_admin_token");
-  if (stored) return stored;
+  // First check localStorage (most persistent, survives II redirect)
+  try {
+    const stored = localStorage.getItem("caffeine_admin_token");
+    if (stored) return stored;
+  } catch {
+    // ignore
+  }
   return getSecretFromHash(paramName);
 }
+
+// ── Admin token helpers (used across the app) ─────────────────────────────────
 
 const ADMIN_TOKEN_KEY = "caffeine_admin_token";
 
 /**
- * Reads the admin token from the current URL (query string OR hash),
- * stores it in localStorage so it survives the Internet Identity redirect,
- * and removes it from the URL bar.
- *
- * Call this ONCE at the very top of App.tsx before any redirect happens.
+ * Reads the admin token from the URL (?caffeineAdminToken=... or #caffeineAdminToken=...)
+ * and saves it in localStorage so it survives the Internet Identity redirect.
+ * Call this as early as possible on page load.
  */
 export function captureAdminToken(): void {
-  // 1. Try query string: ?caffeineAdminToken=xxx
+  // Try query string first (Caffeine injects it here)
   const urlParams = new URLSearchParams(window.location.search);
   let token = urlParams.get("caffeineAdminToken");
 
-  // 2. Try hash: #caffeineAdminToken=xxx  or  #/?caffeineAdminToken=xxx
+  // Fallback: hash fragment
   if (!token) {
     const hash = window.location.hash;
-    if (hash && hash.length > 1) {
-      const hashContent = hash.substring(1);
-      // Try direct hash params
-      const directParams = new URLSearchParams(hashContent);
-      token = directParams.get("caffeineAdminToken");
-      // Try query within hash
-      if (!token) {
-        const qIdx = hashContent.indexOf("?");
-        if (qIdx !== -1) {
-          const hashQuery = new URLSearchParams(
-            hashContent.substring(qIdx + 1),
-          );
-          token = hashQuery.get("caffeineAdminToken");
-        }
-      }
+    const qIdx = hash.indexOf("?");
+    if (qIdx !== -1) {
+      const hashParams = new URLSearchParams(hash.substring(qIdx + 1));
+      token = hashParams.get("caffeineAdminToken");
+    }
+    if (!token) {
+      // e.g. #caffeineAdminToken=xxx  (no slash)
+      const bare = new URLSearchParams(hash.substring(1));
+      token = bare.get("caffeineAdminToken");
     }
   }
 
   if (token) {
-    localStorage.setItem(ADMIN_TOKEN_KEY, token);
-    // Remove from URL to avoid leakage
     try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("caffeineAdminToken");
-      window.history.replaceState(null, "", url.toString());
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
     } catch {
       // ignore
     }
   }
 }
 
-/** Returns the stored admin token from localStorage, or null if not set. */
+/**
+ * Returns the stored admin token from localStorage, or null if not present.
+ */
 export function getStoredAdminToken(): string | null {
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
-/** Removes the admin token from localStorage. */
+/**
+ * Removes the admin token from localStorage.
+ */
 export function clearStoredAdminToken(): void {
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  try {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
 }
