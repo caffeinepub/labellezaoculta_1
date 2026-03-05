@@ -63,23 +63,10 @@ actor {
   var seeded = false;
   var nextAlbumId = 0;
 
-  // Registration Function - the first authenticated user becomes admin.
-  // Works even if the caller was already pre-registered as a regular user.
+  // Registration Function (NO auth check - anyone can call)
   public shared ({ caller }) func registerAsAdmin() : async () {
-    if (caller.isAnonymous()) { return };
-    if (not accessControlState.adminAssigned) {
-      // No admin yet — make this caller admin regardless of existing role
-      accessControlState.userRoles.add(caller, #admin);
-      accessControlState.adminAssigned := true;
-    } else {
-      // Admin already claimed — check if this caller IS the admin
-      switch (accessControlState.userRoles.get(caller)) {
-        case (? #admin) { /* already admin, nothing to do */ };
-        case (_) {
-          Runtime.trap("El acceso de administrador ya fue reclamado por otra cuenta.");
-        };
-      };
-    };
+    // Pass empty strings for token arguments (unused in this context)
+    AccessControl.initialize(accessControlState, caller, "", "");
   };
 
   // User Profile Functions

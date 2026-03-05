@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -41,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Check,
-  ImagePlus,
+  CheckCircle2,
   Loader2,
   LogIn,
   Pencil,
@@ -50,14 +51,15 @@ import {
   Trash2,
   Upload,
   X,
+  XCircle,
 } from "lucide-react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Album, AlbumId, Photo } from "../backend.d";
+import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
-  useAddPhoto,
   useAlbums,
   useCreateAlbum,
   useDeleteAlbum,
@@ -197,46 +199,519 @@ function AlbumFormDialog({
   );
 }
 
+// ── Multi Photo Upload Dialog ────────────────────────────────────────────────
+
+type PhotoQueueItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  title: string;
+  description: string;
+  // upload state
+  status: "pending" | "uploading" | "done" | "error";
+  progress: number;
+  errorMsg?: string;
+};
+
+function MultiPhotoUploadDialog({
+  open,
+  onOpenChange,
+  albums,
+  identity,
+  onComplete,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  albums: Album[];
+  identity?: import("@icp-sdk/core/agent").Identity;
+  onComplete: () => void;
+}) {
+  const { actor } = useActor();
+  const [albumIdStr, setAlbumIdStr] = useState(albums[0]?.id?.toString() ?? "");
+  const [queue, setQueue] = useState<PhotoQueueItem[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedCount, setUploadedCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync album selection when albums load
+  useEffect(() => {
+    if (albums.length > 0 && !albumIdStr) {
+      setAlbumIdStr(albums[0].id.toString());
+    }
+  }, [albums, albumIdStr]);
+
+  const resetDialog = () => {
+    for (const item of queue) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+    setQueue([]);
+    setUploadedCount(0);
+    setIsUploading(false);
+    setAlbumIdStr(albums[0]?.id?.toString() ?? "");
+  };
+
+  const handleOpenChange = (v: boolean) => {
+    if (!v && isUploading) return; // prevent close during upload
+    if (!v) resetDialog();
+    onOpenChange(v);
+  };
+
+  const addFilesToQueue = (files: FileList | File[]) => {
+    const newItems: PhotoQueueItem[] = Array.from(files)
+      .filter((f) => f.type.startsWith("image/"))
+      .map((f) => ({
+        id: `${f.name}-${f.size}-${f.lastModified}`,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        title: f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+        description: "",
+        status: "pending" as const,
+        progress: 0,
+      }));
+    setQueue((prev) => {
+      // Deduplicate by id
+      const existingIds = new Set(prev.map((i) => i.id));
+      return [...prev, ...newItems.filter((i) => !existingIds.has(i.id))];
+    });
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    addFilesToQueue(e.dataTransfer.files);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => setIsDragOver(false);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addFilesToQueue(e.target.files);
+    e.target.value = "";
+  };
+
+  const removeFromQueue = (id: string) => {
+    setQueue((prev) => {
+      const item = prev.find((i) => i.id === id);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((i) => i.id !== id);
+    });
+  };
+
+  const updateItemTitle = (id: string, title: string) => {
+    setQueue((prev) => prev.map((i) => (i.id === id ? { ...i, title } : i)));
+  };
+
+  const handleUploadAll = async () => {
+    if (!albumIdStr) {
+      toast.error("Por favor selecciona un álbum");
+      return;
+    }
+    const pending = queue.filter((i) => i.status === "pending");
+    if (pending.length === 0) return;
+
+    setIsUploading(true);
+    let successCount = 0;
+    const albumIdBigint: AlbumId = BigInt(albumIdStr);
+
+    for (const item of pending) {
+      if (!item.title.trim()) {
+        setQueue((prev) =>
+          prev.map((i) =>
+            i.id === item.id
+              ? { ...i, status: "error", errorMsg: "El título es obligatorio" }
+              : i,
+          ),
+        );
+        continue;
+      }
+
+      setQueue((prev) =>
+        prev.map((i) =>
+          i.id === item.id ? { ...i, status: "uploading", progress: 0 } : i,
+        ),
+      );
+
+      try {
+        const bytes = new Uint8Array(await item.file.arrayBuffer());
+        const storageClient = await getStorageClient(identity);
+        const { hash } = await storageClient.putFile(bytes, (pct) => {
+          setQueue((prev) =>
+            prev.map((i) => (i.id === item.id ? { ...i, progress: pct } : i)),
+          );
+        });
+
+        if (!actor) throw new Error("No conectado al backend");
+        await actor.addPhoto(
+          item.title.trim(),
+          item.description.trim(),
+          albumIdBigint,
+          hash,
+        );
+
+        setQueue((prev) =>
+          prev.map((i) =>
+            i.id === item.id ? { ...i, status: "done", progress: 100 } : i,
+          ),
+        );
+        successCount++;
+        setUploadedCount((c) => c + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error desconocido";
+        setQueue((prev) =>
+          prev.map((i) =>
+            i.id === item.id ? { ...i, status: "error", errorMsg: msg } : i,
+          ),
+        );
+      }
+    }
+
+    setIsUploading(false);
+
+    const failedCount = pending.length - successCount;
+    if (failedCount === 0) {
+      toast.success(
+        `${successCount} ${successCount === 1 ? "foto subida" : "fotos subidas"} correctamente`,
+      );
+      resetDialog();
+      onComplete();
+      onOpenChange(false);
+    } else {
+      toast.error(
+        `${successCount} subidas, ${failedCount} con errores. Revisa los errores.`,
+      );
+    }
+  };
+
+  const pendingCount = queue.filter((i) => i.status === "pending").length;
+  const doneCount = queue.filter((i) => i.status === "done").length;
+  const errorCount = queue.filter((i) => i.status === "error").length;
+  const hasQueue = queue.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="bg-surface-1 border-border/50 text-foreground sm:max-w-2xl w-full max-h-[90vh] flex flex-col"
+        data-ocid="photo.dialog"
+      >
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="font-display text-lg font-medium">
+            Subir fotos
+          </DialogTitle>
+          <DialogDescription className="text-text-dim text-sm">
+            Arrastra imágenes o haz clic para seleccionarlas. Puedes subir
+            varias a la vez.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-hidden flex flex-col gap-4 mt-2">
+          {/* Album selector */}
+          <div className="space-y-1.5 shrink-0">
+            <Label className="text-text-dim text-xs uppercase tracking-widest font-mono">
+              Álbum destino
+            </Label>
+            <Select
+              value={albumIdStr}
+              onValueChange={setAlbumIdStr}
+              disabled={isUploading}
+            >
+              <SelectTrigger
+                className="bg-surface-2 border-border/50 text-foreground"
+                data-ocid="photo.select"
+              >
+                <SelectValue placeholder="Selecciona un álbum..." />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border/50">
+                {albums.map((a) => (
+                  <SelectItem
+                    key={a.id.toString()}
+                    value={a.id.toString()}
+                    className="text-foreground focus:bg-surface-2"
+                  >
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            className={`shrink-0 relative border-2 border-dashed rounded-sm transition-all duration-200 select-none ${
+              isDragOver
+                ? "border-primary bg-primary/8 scale-[1.01]"
+                : hasQueue
+                  ? "border-border/30 bg-surface-2/30 py-4"
+                  : "border-border/50 hover:border-border/80 bg-surface-2/20 py-10"
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            data-ocid="photo.dropzone"
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+            <button
+              type="button"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              aria-label="Zona de arrastre de imágenes. Haz clic para seleccionar archivos."
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              data-ocid="photo.upload_button"
+            />
+            <div className="flex flex-col items-center gap-2 pointer-events-none">
+              <motion.div
+                animate={{ scale: isDragOver ? 1.15 : 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              >
+                <Upload
+                  className={`w-7 h-7 transition-colors ${isDragOver ? "text-primary" : "text-text-dim"}`}
+                />
+              </motion.div>
+              {hasQueue ? (
+                <p className="text-text-dim text-xs font-mono">
+                  Añadir más imágenes
+                </p>
+              ) : (
+                <>
+                  <p className="text-text-dim text-sm">
+                    Arrastra imágenes aquí o{" "}
+                    <span className="text-primary underline underline-offset-2">
+                      selecciona archivos
+                    </span>
+                  </p>
+                  <p className="text-text-subtle text-xs font-mono uppercase tracking-wider">
+                    JPG · PNG · WEBP · GIF
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Queue preview */}
+          <AnimatePresence initial={false}>
+            {hasQueue && (
+              <motion.div
+                key="queue"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex-1 min-h-0"
+              >
+                {/* Progress summary */}
+                {isUploading && (
+                  <div
+                    className="mb-3 space-y-1"
+                    data-ocid="photo.loading_state"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-text-dim text-xs font-mono uppercase tracking-widest">
+                        Progreso general
+                      </span>
+                      <span className="text-text-dim text-xs font-mono">
+                        {uploadedCount} de {queue.length} fotos
+                      </span>
+                    </div>
+                    <Progress
+                      value={Math.round((uploadedCount / queue.length) * 100)}
+                      className="h-1.5"
+                    />
+                  </div>
+                )}
+
+                {/* Partial failure summary */}
+                {!isUploading && errorCount > 0 && (
+                  <div
+                    className="mb-3 flex items-center gap-2 text-destructive text-xs font-mono bg-destructive/10 border border-destructive/20 rounded-sm px-3 py-2"
+                    data-ocid="photo.error_state"
+                  >
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>
+                      {errorCount}{" "}
+                      {errorCount === 1 ? "foto falló" : "fotos fallaron"}
+                      {doneCount > 0 && ` · ${doneCount} subidas correctamente`}
+                    </span>
+                  </div>
+                )}
+
+                <ScrollArea className="h-[260px] pr-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <AnimatePresence>
+                      {queue.map((item, idx) => (
+                        <motion.div
+                          key={item.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.85 }}
+                          transition={{ duration: 0.2 }}
+                          className={`relative rounded-sm border overflow-hidden flex flex-col ${
+                            item.status === "error"
+                              ? "border-destructive/50"
+                              : item.status === "done"
+                                ? "border-primary/40"
+                                : "border-border/40"
+                          } bg-surface-2`}
+                          data-ocid={`photo.item.${idx + 1}`}
+                        >
+                          {/* Thumbnail */}
+                          <div className="relative h-[90px] shrink-0 overflow-hidden">
+                            <img
+                              src={item.previewUrl}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                            {/* Status overlay */}
+                            {item.status === "done" && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <CheckCircle2 className="w-7 h-7 text-primary" />
+                              </div>
+                            )}
+                            {item.status === "error" && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <XCircle className="w-7 h-7 text-destructive" />
+                              </div>
+                            )}
+                            {item.status === "uploading" && (
+                              <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1">
+                                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                                <span className="text-white text-[10px] font-mono">
+                                  {item.progress}%
+                                </span>
+                              </div>
+                            )}
+                            {/* Remove button */}
+                            {item.status === "pending" && !isUploading && (
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white hover:bg-black/90 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFromQueue(item.id);
+                                }}
+                                aria-label={`Quitar ${item.title}`}
+                                data-ocid={`photo.delete_button.${idx + 1}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Per-photo upload progress bar */}
+                          {item.status === "uploading" && (
+                            <Progress
+                              value={item.progress}
+                              className="h-[3px] rounded-none"
+                            />
+                          )}
+
+                          {/* Title & description */}
+                          <div className="p-2 flex flex-col gap-1.5">
+                            <Input
+                              value={item.title}
+                              onChange={(e) =>
+                                updateItemTitle(item.id, e.target.value)
+                              }
+                              placeholder="Título..."
+                              disabled={
+                                item.status === "uploading" ||
+                                item.status === "done"
+                              }
+                              className="h-7 text-xs bg-surface-1 border-border/40 text-foreground placeholder:text-text-subtle px-2"
+                              data-ocid="photo.input"
+                            />
+                            {item.status === "error" && item.errorMsg && (
+                              <p className="text-destructive text-[10px] font-mono leading-tight">
+                                {item.errorMsg}
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </ScrollArea>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <DialogFooter className="gap-2 pt-4 shrink-0 border-t border-border/20 mt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => handleOpenChange(false)}
+            className="text-text-dim"
+            disabled={isUploading}
+            data-ocid="photo.cancel_button"
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            onClick={handleUploadAll}
+            disabled={pendingCount === 0 || isUploading || !albumIdStr}
+            className="bg-primary text-primary-foreground hover:bg-gold-glow gap-2"
+            data-ocid="photo.submit_button"
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Subiendo...
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                {pendingCount > 0
+                  ? `Subir ${pendingCount} ${pendingCount === 1 ? "foto" : "fotos"}`
+                  : "Subir fotos"}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Single Photo Edit Dialog ──────────────────────────────────────────────────
+
 function PhotoFormDialog({
   open,
   onOpenChange,
   photo,
   albums,
-  identity,
   onEditSubmit,
-  onUploadSubmit,
   isPending,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   photo?: Photo | null;
   albums: Album[];
-  identity?: import("@icp-sdk/core/agent").Identity;
   onEditSubmit?: (data: {
     id: string;
     title: string;
     description: string;
     albumId: AlbumId;
   }) => void;
-  onUploadSubmit?: (data: {
-    title: string;
-    description: string;
-    albumId: AlbumId;
-    file: File;
-  }) => void;
   isPending: boolean;
 }) {
-  const isEdit = !!photo;
   const [title, setTitle] = useState(photo?.title ?? "");
   const [description, setDescription] = useState(photo?.description ?? "");
-  // Store albumId as string for Select component (SelectItem value must be string)
   const [albumIdStr, setAlbumIdStr] = useState(
     photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
   );
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleOpen = (v: boolean) => {
     if (v) {
@@ -245,18 +720,11 @@ function PhotoFormDialog({
       setAlbumIdStr(
         photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
       );
-      setFile(null);
-      setUploadProgress(0);
     }
     onOpenChange(v);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) setFile(f);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       toast.error("El título es obligatorio");
@@ -266,53 +734,13 @@ function PhotoFormDialog({
       toast.error("Por favor selecciona un álbum");
       return;
     }
-
-    // Convert string to bigint for backend
-    const albumIdBigint: AlbumId = BigInt(albumIdStr);
-
-    if (isEdit && onEditSubmit && photo) {
+    if (onEditSubmit && photo) {
       onEditSubmit({
         id: photo.id,
         title: title.trim(),
         description: description.trim(),
-        albumId: albumIdBigint,
+        albumId: BigInt(albumIdStr),
       });
-      return;
-    }
-
-    if (!isEdit && onUploadSubmit) {
-      if (!file) {
-        toast.error("Por favor selecciona una imagen");
-        return;
-      }
-      setIsUploading(true);
-      try {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const storageClient = await getStorageClient(identity);
-        const { hash } = await storageClient.putFile(bytes, (pct) =>
-          setUploadProgress(pct),
-        );
-        // Pass the hash directly via the callback
-        (
-          onUploadSubmit as unknown as (d: {
-            title: string;
-            description: string;
-            albumId: AlbumId;
-            blobId: string;
-          }) => void
-        )({
-          title: title.trim(),
-          description: description.trim(),
-          albumId: albumIdBigint,
-          blobId: hash,
-        });
-      } catch (err) {
-        toast.error(
-          `Error al subir: ${err instanceof Error ? err.message : "Error desconocido"}`,
-        );
-      } finally {
-        setIsUploading(false);
-      }
     }
   };
 
@@ -324,79 +752,13 @@ function PhotoFormDialog({
       >
         <DialogHeader>
           <DialogTitle className="font-display text-lg font-medium">
-            {isEdit ? "Editar foto" : "Subir foto"}
+            Editar foto
           </DialogTitle>
           <DialogDescription className="text-text-dim text-sm">
-            {isEdit
-              ? "Actualiza los detalles de la foto."
-              : "Añade una nueva foto a tu colección."}
+            Actualiza los detalles de la foto.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* File upload (new only) */}
-          {!isEdit && (
-            <div className="space-y-1.5">
-              <Label className="text-text-dim text-xs uppercase tracking-widest font-mono">
-                Imagen
-              </Label>
-              <button
-                type="button"
-                className={`w-full relative border border-dashed rounded-sm p-6 text-center cursor-pointer transition-colors ${
-                  file
-                    ? "border-primary/50 bg-primary/5"
-                    : "border-border/50 hover:border-border"
-                }`}
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Haz clic para seleccionar imagen"
-                data-ocid="photo.upload_button"
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                {file ? (
-                  <div className="flex items-center gap-3 justify-center">
-                    <ImagePlus className="w-5 h-5 text-primary" />
-                    <span className="text-foreground text-sm truncate max-w-[200px]">
-                      {file.name}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-text-dim hover:text-foreground"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFile(null);
-                      }}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Upload className="w-8 h-8 text-text-dim mx-auto" />
-                    <p className="text-text-dim text-sm">
-                      Haz clic para seleccionar imagen
-                    </p>
-                    <p className="text-text-subtle text-xs">JPG, PNG, WEBP</p>
-                  </div>
-                )}
-              </button>
-              {isUploading && (
-                <div className="space-y-1" data-ocid="photo.loading_state">
-                  <Progress value={uploadProgress} className="h-1" />
-                  <p className="text-text-dim text-xs font-mono text-right">
-                    {uploadProgress}%
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-1.5">
             <Label
               htmlFor="photo-title"
@@ -470,14 +832,12 @@ function PhotoFormDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isPending || isUploading}
+              disabled={isPending}
               className="bg-primary text-primary-foreground hover:bg-gold-glow"
               data-ocid="photo.submit_button"
             >
-              {(isPending || isUploading) && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
-              {isEdit ? "Guardar cambios" : "Subir foto"}
+              {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Guardar cambios
             </Button>
           </DialogFooter>
         </form>
@@ -725,9 +1085,8 @@ function AlbumsTab() {
 function PhotosTab({
   identity,
 }: { identity?: import("@icp-sdk/core/agent").Identity }) {
-  const { data: photos = [], isLoading } = usePhotos();
+  const { data: photos = [], isLoading, refetch: refetchPhotos } = usePhotos();
   const { data: albums = [] } = useAlbums();
-  const addPhoto = useAddPhoto();
   const updatePhoto = useUpdatePhoto();
   const deletePhoto = useDeletePhoto();
 
@@ -737,24 +1096,6 @@ function PhotosTab({
 
   const albumMap = Object.fromEntries(
     albums.map((a: Album) => [a.id.toString(), a.name]),
-  );
-
-  const handleUpload = useCallback(
-    (data: {
-      title: string;
-      description: string;
-      albumId: AlbumId;
-      blobId: string;
-    }) => {
-      addPhoto.mutate(data, {
-        onSuccess: () => {
-          toast.success("Foto subida");
-          setUploadOpen(false);
-        },
-        onError: (e) => toast.error(`Error: ${e.message}`),
-      });
-    },
-    [addPhoto],
   );
 
   const handleUpdate = useCallback(
@@ -809,7 +1150,7 @@ function PhotosTab({
           data-ocid="admin.photos.open_modal_button"
         >
           <Plus className="w-4 h-4" />
-          Subir foto
+          Subir fotos
         </Button>
       </div>
 
@@ -928,21 +1269,13 @@ function PhotosTab({
         </div>
       )}
 
-      {/* Upload dialog */}
-      <PhotoFormDialog
+      {/* Multi-upload dialog */}
+      <MultiPhotoUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         albums={albums}
         identity={identity}
-        onUploadSubmit={
-          handleUpload as unknown as (d: {
-            title: string;
-            description: string;
-            albumId: AlbumId;
-            file: File;
-          }) => void
-        }
-        isPending={addPhoto.isPending}
+        onComplete={() => refetchPhotos()}
       />
 
       {/* Edit dialog */}
@@ -951,7 +1284,6 @@ function PhotosTab({
         onOpenChange={(v) => !v && setEditPhoto(null)}
         photo={editPhoto}
         albums={albums}
-        identity={identity}
         onEditSubmit={handleUpdate}
         isPending={updatePhoto.isPending}
       />

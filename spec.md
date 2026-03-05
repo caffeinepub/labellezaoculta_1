@@ -1,23 +1,35 @@
 # Labellezaoculta
 
 ## Current State
-Gallery app with albums and photos. Admin access is broken: users get "access denied" because `_initializeAccessControlWithSecret` is called with an empty token in `useActor`, registering them as `#user`. Then `registerAsAdmin` can't elevate them. The `registerAsAdmin` backend function passes empty strings to `initialize()` which only works if `CAFFEINE_ADMIN_TOKEN` is also empty (it isn't).
+- Full photo gallery app with backend (blob-storage + authorization)
+- Admin panel with Albums tab and Photos tab
+- Photos tab has a single-photo upload dialog (PhotoFormDialog) with file picker, title, description, album selector
+- Upload uses StorageClient.putFile with progress bar
+- Gallery shows photos with real image URLs from blob storage
+- Demo photos show placeholder images/gradients
+- No multi-photo upload support
 
 ## Requested Changes (Diff)
 
 ### Add
-- Backend: new `claimAdmin()` function that allows the first non-anonymous, unregistered caller to become admin without a token (first-come-first-served). If admin is already assigned, returns an error.
-- Backend: `isAdminClaimed()` query to check if an admin has already been registered.
+- Multi-photo upload: allow selecting multiple files at once
+- Drag-and-drop zone in the upload area (dropzone)
+- Image preview thumbnails before submitting
+- Per-photo title/description fields when uploading multiple
+- Upload queue with individual progress indicators
 
 ### Modify
-- Frontend `useQueries.ts`: `useRegisterAsAdmin` mutation should call `actor.claimAdmin()` directly instead of requiring `caffeineAdminToken` from the URL. Still invalidates isAdmin/isRegistered queries on success.
-- Frontend `AdminPanel.tsx`: `AutoRegisterScreen` should handle the new error when admin is already claimed (show a different message explaining that admin is already taken).
+- PhotoFormDialog: replace single file picker with multi-file drag-and-drop zone
+- Show thumbnail previews of selected images before upload
+- Album selector applies to all photos in a batch upload
 
 ### Remove
-- Backend: remove `registerAsAdmin()` function that was broken (passed empty tokens).
+- Nothing removed
 
 ## Implementation Plan
-1. Add `claimAdmin()` and `isAdminClaimed()` to backend `main.mo`
-2. Remove broken `registerAsAdmin()` from `main.mo`
-3. Update `useRegisterAsAdmin` in `useQueries.ts` to call `actor.claimAdmin()`
-4. Update `AutoRegisterScreen` in `AdminPanel.tsx` to handle "admin already claimed" error message
+1. Create a new MultiPhotoUploadDialog component in AdminPanel.tsx
+2. Replace the existing single-file PhotoFormDialog upload flow with the new multi-upload component
+3. Show image previews with thumbnails after file selection
+4. Upload photos sequentially with per-photo progress
+5. Allow editing title/description per photo in the queue
+6. Keep the existing edit-photo flow (single photo edit) unchanged
