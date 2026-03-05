@@ -90,10 +90,20 @@ export function PhotoCard({
       setImageUrl(placeholder);
       setLoading(false);
     } else {
+      // First try the direct URL; if that fails we fall back to a blob object URL
       getImageUrl(photo.blobId)
-        .then((url) => {
+        .then(async (directUrl) => {
+          if (cancelled) return;
+          if (!directUrl) {
+            setImageUrl(null);
+            setLoading(false);
+            return;
+          }
+          // Probe via fetch to check if the URL is actually reachable and
+          // to obtain a blob URL so the browser always has a valid Content-Type.
+          const objUrl = await fetchAsObjectUrl(directUrl);
           if (!cancelled) {
-            setImageUrl(url);
+            setImageUrl(objUrl ?? directUrl);
             setLoading(false);
           }
         })
@@ -138,29 +148,27 @@ export function PhotoCard({
         {/* Image or gradient placeholder */}
         {imageUrl ? (
           <>
+            <div
+              className="absolute inset-0 transition-opacity duration-500"
+              style={{
+                background: gradient,
+                opacity: imageLoaded ? 0 : 1,
+                pointerEvents: "none",
+              }}
+            />
             <img
               src={imageUrl}
               alt={photo.title}
-              className={`w-full object-cover block photo-card-img transition-all duration-700 ${
-                imageLoaded ? "opacity-100" : "opacity-0"
-              }`}
+              className="w-full object-cover block photo-card-img"
               onLoad={() => setImageLoaded(true)}
-              onError={async () => {
-                // Fallback: fetch as blob object URL to bypass CORS/Content-Type issues
-                const objUrl = await fetchAsObjectUrl(imageUrl);
-                if (objUrl) {
-                  setImageUrl(objUrl);
-                }
+              onError={() => {
+                // If the image fails to render, clear it so the gradient placeholder shows
+                setImageUrl(null);
+                setImageLoaded(false);
               }}
               loading="lazy"
               style={{ minHeight: `${fallbackHeight}px`, display: "block" }}
             />
-            {!imageLoaded && (
-              <div
-                className="absolute inset-0"
-                style={{ background: gradient }}
-              />
-            )}
           </>
         ) : (
           <div

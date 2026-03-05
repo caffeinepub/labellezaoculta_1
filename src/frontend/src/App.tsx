@@ -15,12 +15,18 @@ import { CartDrawer } from "./components/CartDrawer";
 import { useActor } from "./hooks/useActor";
 import { useCart } from "./hooks/useCart";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { getSecretParameter } from "./utils/urlParams";
 import { AdminPanel } from "./views/AdminPanel";
 import { AlbumDetail } from "./views/AlbumDetail";
 import { AlbumsView } from "./views/AlbumsView";
 import { HomeGallery } from "./views/HomeGallery";
 import { PaymentFailure } from "./views/PaymentFailure";
 import { PaymentSuccess } from "./views/PaymentSuccess";
+
+// Capture admin token immediately on page load before any redirect can strip it from the URL
+if (typeof window !== "undefined") {
+  getSecretParameter("caffeineAdminToken");
+}
 
 // Check path-based routing for payment redirects
 function getInitialPaymentView(): "success" | "failure" | null {

@@ -94,8 +94,8 @@ function PhotoThumb({ blobId, index }: { blobId: string; index: number }) {
     if (isDemo(blobId)) {
       setUrl(getDemoPlaceholderImage(index));
     } else {
-      getImageUrl(blobId).then((u) => {
-        if (!cancelled) setUrl(u);
+      getImageUrl(blobId).then((directUrl) => {
+        if (!cancelled && directUrl) setUrl(directUrl);
       });
     }
     return () => {
