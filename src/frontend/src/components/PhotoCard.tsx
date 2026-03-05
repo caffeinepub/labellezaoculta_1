@@ -1,12 +1,48 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { Search, ShoppingCart } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { Photo } from "../backend.d";
+import { useCart } from "../hooks/useCart";
 import {
   getDemoPlaceholderImage,
   getImageUrl,
   isDemo,
 } from "../utils/imageUtils";
+import { ZoomOverlay } from "./ZoomOverlay";
+
+// Fetch image as object URL (fallback for CORS / Content-Type issues)
+async function fetchAsObjectUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    // Detect MIME type from bytes
+    let mime = "image/jpeg";
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) mime = "image/jpeg";
+    else if (bytes[0] === 0x89 && bytes[1] === 0x50) mime = "image/png";
+    else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)
+      mime = "image/gif";
+    else if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes.length > 11 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    )
+      mime = "image/webp";
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
 
 interface PhotoCardProps {
   photo: Photo;
@@ -39,9 +75,13 @@ export function PhotoCard({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const { addToCart, cartItems } = useCart();
 
   const gradient = PLACEHOLDER_GRADIENTS[index % PLACEHOLDER_GRADIENTS.length];
   const fallbackHeight = CARD_HEIGHTS[index % CARD_HEIGHTS.length];
+  const isForSale = photo.price > BigInt(0);
+  const inCart = cartItems.some((i) => i.photo.id === photo.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,12 +90,19 @@ export function PhotoCard({
       setImageUrl(placeholder);
       setLoading(false);
     } else {
-      getImageUrl(photo.blobId).then((url) => {
-        if (!cancelled) {
-          setImageUrl(url);
-          setLoading(false);
-        }
-      });
+      getImageUrl(photo.blobId)
+        .then((url) => {
+          if (!cancelled) {
+            setImageUrl(url);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setImageUrl(null);
+            setLoading(false);
+          }
+        });
     }
     return () => {
       cancelled = true;
@@ -75,70 +122,171 @@ export function PhotoCard({
   }
 
   return (
-    <motion.div
-      className="masonry-item photo-card-root group cursor-pointer relative overflow-hidden"
-      onClick={() => onClick(photo)}
-      data-ocid={dataOcid}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        duration: 0.5,
-        delay: Math.min(index * 0.055, 0.55),
-        ease: [0.25, 0.1, 0.25, 1],
-      }}
-    >
-      {/* Image or gradient placeholder */}
-      {imageUrl ? (
-        <>
-          <img
-            src={imageUrl}
-            alt={photo.title}
-            className={`w-full object-cover block photo-card-img transition-all duration-700 ${
-              imageLoaded ? "opacity-100" : "opacity-0"
-            }`}
-            onLoad={() => setImageLoaded(true)}
-            loading="lazy"
-            style={{ minHeight: `${fallbackHeight}px`, display: "block" }}
-          />
-          {!imageLoaded && (
-            <div
-              className="absolute inset-0"
-              style={{ background: gradient }}
+    <>
+      <motion.div
+        className="masonry-item photo-card-root group cursor-pointer relative overflow-hidden"
+        onClick={() => onClick(photo)}
+        data-ocid={dataOcid}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.5,
+          delay: Math.min(index * 0.055, 0.55),
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
+      >
+        {/* Image or gradient placeholder */}
+        {imageUrl ? (
+          <>
+            <img
+              src={imageUrl}
+              alt={photo.title}
+              className={`w-full object-cover block photo-card-img transition-all duration-700 ${
+                imageLoaded ? "opacity-100" : "opacity-0"
+              }`}
+              onLoad={() => setImageLoaded(true)}
+              onError={async () => {
+                // Fallback: fetch as blob object URL to bypass CORS/Content-Type issues
+                const objUrl = await fetchAsObjectUrl(imageUrl);
+                if (objUrl) {
+                  setImageUrl(objUrl);
+                }
+              }}
+              loading="lazy"
+              style={{ minHeight: `${fallbackHeight}px`, display: "block" }}
             />
-          )}
-        </>
-      ) : (
-        <div
-          className="w-full"
-          style={{ height: `${fallbackHeight}px`, background: gradient }}
+            {!imageLoaded && (
+              <div
+                className="absolute inset-0"
+                style={{ background: gradient }}
+              />
+            )}
+          </>
+        ) : (
+          <div
+            className="w-full"
+            style={{ height: `${fallbackHeight}px`, background: gradient }}
+          />
+        )}
+
+        {/* Deep cinematic overlay — rich multi-stop gradient */}
+        <div className="photo-card-overlay absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end">
+          {/* Ambient top vignette */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to bottom, oklch(0.05 0.003 285 / 0.15) 0%, transparent 35%, oklch(0.05 0.003 285 / 0.7) 70%, oklch(0.05 0.003 285 / 0.97) 100%)",
+            }}
+          />
+
+          {/* Action icons — top-right corner */}
+          <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+            {/* Zoom icon */}
+            {imageUrl && (
+              <motion.button
+                type="button"
+                aria-label="Ampliar foto"
+                data-ocid="photo.toggle"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomOpen(true);
+                }}
+                className="w-9 h-9 rounded-full flex items-center justify-center"
+                style={{
+                  background: "oklch(0.10 0.004 285 / 0.80)",
+                  backdropFilter: "blur(8px)",
+                  border: "1px solid oklch(0.30 0.008 285 / 0.6)",
+                }}
+                whileHover={{
+                  scale: 1.1,
+                  backgroundColor: "oklch(0.18 0.006 285 / 0.9)",
+                }}
+                whileTap={{ scale: 0.93 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2, delay: 0.05 }}
+              >
+                <Search className="w-4 h-4 text-foreground" />
+              </motion.button>
+            )}
+
+            {/* Cart icon — only if for sale */}
+            {isForSale && (
+              <motion.button
+                type="button"
+                aria-label={inCart ? "Ya en el carrito" : "Añadir al carrito"}
+                data-ocid="photo.button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!inCart) {
+                    addToCart(photo);
+                    toast.success("Añadido al carrito", {
+                      description: photo.title,
+                    });
+                  }
+                }}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+                style={{
+                  background: inCart
+                    ? "oklch(0.78 0.14 75 / 0.3)"
+                    : "oklch(0.10 0.004 285 / 0.80)",
+                  backdropFilter: "blur(8px)",
+                  border: inCart
+                    ? "1px solid oklch(0.78 0.14 75 / 0.5)"
+                    : "1px solid oklch(0.30 0.008 285 / 0.6)",
+                }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.93 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2, delay: 0.1 }}
+              >
+                <ShoppingCart
+                  className="w-4 h-4"
+                  style={{
+                    color: inCart
+                      ? "oklch(0.88 0.10 75)"
+                      : "oklch(0.85 0.01 285)",
+                  }}
+                />
+              </motion.button>
+            )}
+          </div>
+
+          {/* Text content */}
+          <div className="relative p-4 pb-5">
+            <h3 className="font-display text-sm font-light text-foreground tracking-[0.04em] leading-snug">
+              {photo.title}
+            </h3>
+            {photo.description && (
+              <p className="text-text-dim text-xs mt-1 line-clamp-2 font-sans leading-relaxed opacity-80">
+                {photo.description}
+              </p>
+            )}
+            {isForSale && (
+              <p
+                className="mt-1.5 font-mono text-xs font-medium"
+                style={{ color: "oklch(0.88 0.10 75)" }}
+              >
+                €{(Number(photo.price) / 100).toFixed(2)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Gold inset frame on hover — drawn via box-shadow animation */}
+        <div className="photo-card-frame absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+      </motion.div>
+
+      {/* Zoom overlay — rendered outside the card to avoid overflow:hidden clipping */}
+      {zoomOpen && imageUrl && (
+        <ZoomOverlay
+          imageUrl={imageUrl}
+          title={photo.title}
+          onClose={() => setZoomOpen(false)}
         />
       )}
-
-      {/* Deep cinematic overlay — rich multi-stop gradient */}
-      <div className="photo-card-overlay absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end">
-        {/* Ambient top vignette */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(to bottom, oklch(0.05 0.003 285 / 0.15) 0%, transparent 35%, oklch(0.05 0.003 285 / 0.7) 70%, oklch(0.05 0.003 285 / 0.97) 100%)",
-          }}
-        />
-        {/* Text content */}
-        <div className="relative p-4 pb-5">
-          <h3 className="font-display text-sm font-light text-foreground tracking-[0.04em] leading-snug">
-            {photo.title}
-          </h3>
-          {photo.description && (
-            <p className="text-text-dim text-xs mt-1 line-clamp-2 font-sans leading-relaxed opacity-80">
-              {photo.description}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Gold inset frame on hover — drawn via box-shadow animation */}
-      <div className="photo-card-frame absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-    </motion.div>
+    </>
   );
 }

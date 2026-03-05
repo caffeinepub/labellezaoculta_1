@@ -40,14 +40,17 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   CheckCircle2,
+  CreditCard,
   Loader2,
   LogIn,
   Pencil,
   Plus,
   ShieldAlert,
+  Star,
   Trash2,
   Upload,
   X,
@@ -56,7 +59,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Album, AlbumId, Photo } from "../backend.d";
+import type { Album, AlbumId, Photo, StripeConfiguration } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
@@ -66,15 +69,183 @@ import {
   useDeletePhoto,
   useIsAdmin,
   useIsRegistered,
+  useIsStripeConfigured,
   usePhotos,
+  usePhotosByAlbum,
   useRegisterAsAdmin,
+  useSetStripeConfiguration,
   useUpdateAlbum,
   useUpdatePhoto,
 } from "../hooks/useQueries";
 import { getStorageClient } from "../hooks/useStorageClient";
-import { getDemoPlaceholderImage, isDemo } from "../utils/imageUtils";
+import {
+  getDemoPlaceholderImage,
+  getImageUrl,
+  isDemo,
+} from "../utils/imageUtils";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
+
+function PhotoThumb({ blobId, index }: { blobId: string; index: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo(blobId)) {
+      setUrl(getDemoPlaceholderImage(index));
+    } else {
+      getImageUrl(blobId).then((u) => {
+        if (!cancelled) setUrl(u);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [blobId, index]);
+
+  return (
+    <div className="w-9 h-9 rounded-sm overflow-hidden bg-surface-2">
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className="w-full h-full"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.15 0.02 285), oklch(0.22 0.06 290))",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AlbumCoverSelector({
+  albumId,
+  currentCoverBlobId,
+  onSelect,
+}: {
+  albumId: bigint;
+  currentCoverBlobId?: string;
+  onSelect: (blobId: string | null) => void;
+}) {
+  const { data: photos = [], isLoading } = usePhotosByAlbum(albumId);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        {[1, 2, 3].map((k) => (
+          <div
+            key={k}
+            className="aspect-square rounded-sm bg-surface-2 animate-pulse"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (photos.length === 0) {
+    return (
+      <p className="text-text-subtle text-xs font-mono mt-2">
+        Sube fotos al álbum para poder seleccionar una portada.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-4 gap-2 mt-2 max-h-48 overflow-y-auto pr-1">
+      {/* "Sin portada" option */}
+      <button
+        type="button"
+        onClick={() => onSelect(null)}
+        className={`aspect-square rounded-sm border-2 flex items-center justify-center text-[10px] font-mono text-text-subtle transition-all ${
+          !currentCoverBlobId
+            ? "border-primary/60 bg-primary/10 text-primary"
+            : "border-border/30 bg-surface-2 hover:border-border/60"
+        }`}
+        aria-label="Sin foto de portada"
+      >
+        {!currentCoverBlobId ? (
+          <Check className="w-4 h-4" />
+        ) : (
+          <X className="w-3 h-3 opacity-50" />
+        )}
+      </button>
+
+      {photos.map((photo) => (
+        <AlbumCoverThumb
+          key={photo.id}
+          photo={photo}
+          isSelected={photo.blobId === currentCoverBlobId}
+          onSelect={() => onSelect(photo.blobId)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AlbumCoverThumb({
+  photo,
+  isSelected,
+  onSelect,
+}: {
+  photo: Photo;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo(photo.blobId)) {
+      setUrl(getDemoPlaceholderImage(0));
+    } else {
+      import("../utils/imageUtils").then(({ getImageUrl }) => {
+        getImageUrl(photo.blobId).then((u) => {
+          if (!cancelled) setUrl(u);
+        });
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [photo.blobId]);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={photo.title}
+      aria-label={`Seleccionar como portada: ${photo.title}`}
+      className={`relative aspect-square rounded-sm border-2 overflow-hidden transition-all ${
+        isSelected
+          ? "border-primary/80 ring-1 ring-primary/40"
+          : "border-border/30 hover:border-border/70"
+      }`}
+    >
+      {url ? (
+        <img
+          src={url}
+          alt={photo.title}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div className="w-full h-full bg-surface-2" />
+      )}
+      {isSelected && (
+        <div className="absolute inset-0 flex items-center justify-center bg-primary/20">
+          <Star className="w-4 h-4 text-gold fill-gold" />
+        </div>
+      )}
+    </button>
+  );
+}
 
 function AlbumFormDialog({
   open,
@@ -86,17 +257,25 @@ function AlbumFormDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   album?: Album | null;
-  onSubmit: (data: { name: string; description: string }) => void;
+  onSubmit: (data: {
+    name: string;
+    description: string;
+    coverBlobId?: string | null;
+  }) => void;
   isPending: boolean;
 }) {
   const [name, setName] = useState(album?.name ?? "");
   const [description, setDescription] = useState(album?.description ?? "");
+  const [coverBlobId, setCoverBlobId] = useState<string | null | undefined>(
+    album?.coverBlobId,
+  );
 
   // Sync state when album prop changes (e.g. selecting a different album to edit)
   useEffect(() => {
     if (open) {
       setName(album?.name ?? "");
       setDescription(album?.description ?? "");
+      setCoverBlobId(album?.coverBlobId ?? null);
     }
   }, [open, album]);
 
@@ -105,6 +284,7 @@ function AlbumFormDialog({
     if (v) {
       setName(album?.name ?? "");
       setDescription(album?.description ?? "");
+      setCoverBlobId(album?.coverBlobId ?? null);
     }
     onOpenChange(v);
   };
@@ -115,13 +295,17 @@ function AlbumFormDialog({
       toast.error("El nombre del álbum es obligatorio");
       return;
     }
-    onSubmit({ name: name.trim(), description: description.trim() });
+    onSubmit({
+      name: name.trim(),
+      description: description.trim(),
+      coverBlobId,
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
       <DialogContent
-        className="bg-surface-1 border-border/50 text-foreground sm:max-w-md"
+        className="bg-surface-1 border-border/50 text-foreground sm:max-w-lg max-h-[90vh] overflow-y-auto"
         data-ocid="album.dialog"
       >
         <DialogHeader>
@@ -163,12 +347,36 @@ function AlbumFormDialog({
               id="album-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="A brief description of this album..."
+              placeholder="Una breve descripción de este álbum..."
               className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle resize-none"
               rows={3}
               data-ocid="album.textarea"
             />
           </div>
+
+          {/* Cover photo selector — only for existing albums */}
+          {album && (
+            <div className="space-y-1.5">
+              <Label className="text-text-dim text-xs uppercase tracking-widest font-mono flex items-center gap-1.5">
+                <Star className="w-3 h-3" />
+                Foto de portada
+              </Label>
+              <p className="text-text-subtle text-xs font-sans">
+                Haz clic en una foto para establecerla como portada del álbum.
+              </p>
+              <AlbumCoverSelector
+                albumId={album.id}
+                currentCoverBlobId={coverBlobId ?? undefined}
+                onSelect={setCoverBlobId}
+              />
+              {coverBlobId && (
+                <p className="text-xs font-mono text-text-dim mt-1">
+                  ✓ Portada seleccionada
+                </p>
+              )}
+            </div>
+          )}
+
           <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"
@@ -207,6 +415,7 @@ type PhotoQueueItem = {
   previewUrl: string;
   title: string;
   description: string;
+  priceStr: string; // string for input, converted to bigint on submit
   // upload state
   status: "pending" | "uploading" | "done" | "error";
   progress: number;
@@ -266,6 +475,7 @@ function MultiPhotoUploadDialog({
         previewUrl: URL.createObjectURL(f),
         title: f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
         description: "",
+        priceStr: "",
         status: "pending" as const,
         progress: 0,
       }));
@@ -304,6 +514,10 @@ function MultiPhotoUploadDialog({
 
   const updateItemTitle = (id: string, title: string) => {
     setQueue((prev) => prev.map((i) => (i.id === id ? { ...i, title } : i)));
+  };
+
+  const updateItemPrice = (id: string, priceStr: string) => {
+    setQueue((prev) => prev.map((i) => (i.id === id ? { ...i, priceStr } : i)));
   };
 
   const handleUploadAll = async () => {
@@ -346,11 +560,16 @@ function MultiPhotoUploadDialog({
         });
 
         if (!actor) throw new Error("No conectado al backend");
+        const priceEuros = Number.parseFloat(item.priceStr || "0");
+        const priceCents = BigInt(
+          Math.round(Number.isNaN(priceEuros) ? 0 : priceEuros * 100),
+        );
         await actor.addPhoto(
           item.title.trim(),
           item.description.trim(),
           albumIdBigint,
           hash,
+          priceCents,
         );
 
         setQueue((prev) =>
@@ -616,7 +835,7 @@ function MultiPhotoUploadDialog({
                             />
                           )}
 
-                          {/* Title & description */}
+                          {/* Title & price */}
                           <div className="p-2 flex flex-col gap-1.5">
                             <Input
                               value={item.title}
@@ -624,6 +843,22 @@ function MultiPhotoUploadDialog({
                                 updateItemTitle(item.id, e.target.value)
                               }
                               placeholder="Título..."
+                              disabled={
+                                item.status === "uploading" ||
+                                item.status === "done"
+                              }
+                              className="h-7 text-xs bg-surface-1 border-border/40 text-foreground placeholder:text-text-subtle px-2"
+                              data-ocid="photo.input"
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.priceStr}
+                              onChange={(e) =>
+                                updateItemPrice(item.id, e.target.value)
+                              }
+                              placeholder="Precio €"
                               disabled={
                                 item.status === "uploading" ||
                                 item.status === "done"
@@ -704,6 +939,7 @@ function PhotoFormDialog({
     title: string;
     description: string;
     albumId: AlbumId;
+    price: bigint;
   }) => void;
   isPending: boolean;
 }) {
@@ -711,6 +947,9 @@ function PhotoFormDialog({
   const [description, setDescription] = useState(photo?.description ?? "");
   const [albumIdStr, setAlbumIdStr] = useState(
     photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
+  );
+  const [priceStr, setPriceStr] = useState(
+    photo?.price ? (Number(photo.price) / 100).toFixed(2) : "",
   );
 
   const handleOpen = (v: boolean) => {
@@ -720,6 +959,7 @@ function PhotoFormDialog({
       setAlbumIdStr(
         photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
       );
+      setPriceStr(photo?.price ? (Number(photo.price) / 100).toFixed(2) : "");
     }
     onOpenChange(v);
   };
@@ -735,11 +975,16 @@ function PhotoFormDialog({
       return;
     }
     if (onEditSubmit && photo) {
+      const priceEuros = Number.parseFloat(priceStr || "0");
+      const priceCents = BigInt(
+        Math.round(Number.isNaN(priceEuros) ? 0 : priceEuros * 100),
+      );
       onEditSubmit({
         id: photo.id,
         title: title.trim(),
         description: description.trim(),
         albumId: BigInt(albumIdStr),
+        price: priceCents,
       });
     }
   };
@@ -820,6 +1065,26 @@ function PhotoFormDialog({
             </Select>
           </div>
 
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="photo-price"
+              className="text-text-dim text-xs uppercase tracking-widest font-mono"
+            >
+              Precio (€) — 0 = no está a la venta
+            </Label>
+            <Input
+              id="photo-price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={priceStr}
+              onChange={(e) => setPriceStr(e.target.value)}
+              placeholder="0.00"
+              className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle"
+              data-ocid="photo.input"
+            />
+          </div>
+
           <DialogFooter className="gap-2 pt-2">
             <Button
               type="button"
@@ -859,7 +1124,10 @@ function AlbumsTab() {
   const [deleteId, setDeleteId] = useState<AlbumId | null>(null);
 
   const handleCreate = useCallback(
-    ({ name, description }: { name: string; description: string }) => {
+    ({
+      name,
+      description,
+    }: { name: string; description: string; coverBlobId?: string | null }) => {
       createAlbum.mutate(
         { name, description },
         {
@@ -878,14 +1146,21 @@ function AlbumsTab() {
   );
 
   const handleUpdate = useCallback(
-    ({ name, description }: { name: string; description: string }) => {
+    ({
+      name,
+      description,
+      coverBlobId,
+    }: { name: string; description: string; coverBlobId?: string | null }) => {
       if (!editAlbum) return;
       updateAlbum.mutate(
         {
           id: editAlbum.id,
           name,
           description,
-          coverBlobId: editAlbum.coverBlobId ?? undefined,
+          coverBlobId:
+            coverBlobId !== undefined
+              ? coverBlobId
+              : (editAlbum.coverBlobId ?? null),
         },
         {
           onSuccess: () => {
@@ -1089,6 +1364,7 @@ function PhotosTab({
   const { data: albums = [] } = useAlbums();
   const updatePhoto = useUpdatePhoto();
   const deletePhoto = useDeletePhoto();
+  const queryClient = useQueryClient();
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editPhoto, setEditPhoto] = useState<Photo | null>(null);
@@ -1104,14 +1380,16 @@ function PhotosTab({
       title,
       description,
       albumId,
+      price,
     }: {
       id: string;
       title: string;
       description: string;
       albumId: AlbumId;
+      price: bigint;
     }) => {
       updatePhoto.mutate(
-        { id, title, description, albumId },
+        { id, title, description, albumId, price },
         {
           onSuccess: () => {
             toast.success("Foto actualizada");
@@ -1207,24 +1485,7 @@ function PhotosTab({
                   data-ocid={`admin.photos.row.${i + 1}`}
                 >
                   <TableCell>
-                    <div className="w-9 h-9 rounded-sm overflow-hidden bg-surface-2">
-                      {isDemo(photo.blobId) ? (
-                        <img
-                          src={getDemoPlaceholderImage(i)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div
-                          className="w-full h-full"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, oklch(0.15 0.02 285), oklch(0.22 0.06 290))",
-                          }}
-                        />
-                      )}
-                    </div>
+                    <PhotoThumb blobId={photo.blobId} index={i} />
                   </TableCell>
                   <TableCell className="font-sans text-sm text-foreground truncate max-w-[180px]">
                     {photo.title}
@@ -1275,7 +1536,12 @@ function PhotosTab({
         onOpenChange={setUploadOpen}
         albums={albums}
         identity={identity}
-        onComplete={() => refetchPhotos()}
+        onComplete={() => {
+          // Invalidate all photo-related queries so gallery and album views refresh
+          queryClient.invalidateQueries({ queryKey: ["photos"] });
+          queryClient.invalidateQueries({ queryKey: ["albums"] });
+          refetchPhotos();
+        }}
       />
 
       {/* Edit dialog */}
@@ -1339,55 +1605,104 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
   useEffect(() => {
     mutate(undefined, {
       onError: () => {
-        // Error is handled in the render below
+        // Error rendered below
       },
     });
   }, [mutate]);
 
+  // Show the error/instructions screen as soon as we have an error
   if (registerAsAdmin.isError) {
-    const errorMsg =
+    const rawMsg =
       registerAsAdmin.error instanceof Error
         ? registerAsAdmin.error.message
         : String(registerAsAdmin.error);
-    const isAlreadyClaimed =
-      errorMsg.includes("ya está registrada") ||
-      errorMsg.includes("ya fue reclamado") ||
-      errorMsg.includes("already");
+
+    // Both OPEN_FROM_CAFFEINE and ALREADY_CLAIMED mean the same thing to the user:
+    // they need to open the app from the Caffeine panel.
+    const needsCaffeinePanel =
+      rawMsg === "OPEN_FROM_CAFFEINE" ||
+      rawMsg === "ALREADY_CLAIMED" ||
+      rawMsg.includes("already") ||
+      rawMsg.includes("claimed");
 
     return (
       <main
-        className="min-h-screen flex items-center justify-center px-6"
+        className="min-h-screen flex items-center justify-center px-6 py-12"
         data-ocid="admin.page"
       >
         <motion.div
-          className="max-w-sm w-full text-center space-y-6"
+          className="max-w-md w-full space-y-6"
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <div
-            className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
-            style={{
-              background:
-                "linear-gradient(135deg, oklch(0.22 0.12 25), oklch(0.15 0.08 30))",
-            }}
-          >
-            <ShieldAlert className="w-7 h-7 text-destructive" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-medium text-foreground mb-2">
-              Acceso denegado
-            </h1>
-            {isAlreadyClaimed ? (
-              <p className="text-text-dim text-sm font-sans">
-                El acceso de administrador ya fue reclamado por otra cuenta de
-                Internet Identity. Inicia sesión con la cuenta que usaste
-                originalmente.
+          {/* Icon + heading */}
+          <div className="text-center space-y-4">
+            <div
+              className="w-16 h-16 rounded-full mx-auto flex items-center justify-center"
+              style={{
+                background:
+                  "linear-gradient(135deg, oklch(0.22 0.12 25), oklch(0.15 0.08 30))",
+              }}
+            >
+              <ShieldAlert className="w-7 h-7 text-destructive" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl font-medium text-foreground mb-2">
+                Acceso denegado
+              </h1>
+              <p className="text-text-dim text-sm font-sans leading-relaxed">
+                {needsCaffeinePanel
+                  ? "Para acceder como administrador, debes abrir la app desde el panel de Caffeine."
+                  : rawMsg}
               </p>
-            ) : (
-              <p className="text-text-dim text-sm font-sans">{errorMsg}</p>
-            )}
+            </div>
           </div>
+
+          {/* How-to instructions box */}
+          {needsCaffeinePanel && (
+            <div
+              className="rounded-sm border border-border/40 bg-surface-2/50 px-4 py-4 space-y-2"
+              data-ocid="admin.panel"
+            >
+              <p className="text-text-dim text-xs font-mono uppercase tracking-widest mb-1">
+                ¿Cómo acceder?
+              </p>
+              <ol className="text-text-dim text-sm font-sans leading-relaxed space-y-1.5 list-decimal list-inside">
+                <li>
+                  Ve al panel de{" "}
+                  <span className="text-gold font-medium">caffeine.ai</span> y
+                  abre tu proyecto.
+                </li>
+                <li>
+                  Pulsa el botón{" "}
+                  <span className="text-foreground font-medium">
+                    "Abrir Borrador"
+                  </span>{" "}
+                  o{" "}
+                  <span className="text-foreground font-medium">
+                    "Previsualizar"
+                  </span>
+                  .
+                </li>
+                <li>
+                  La URL incluirá automáticamente tu token de acceso y entrarás
+                  como admin.
+                </li>
+              </ol>
+            </div>
+          )}
+
+          {/* Retry button */}
+          <Button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="w-full bg-primary text-primary-foreground hover:bg-gold-glow gap-2"
+            data-ocid="admin.primary_button"
+          >
+            Intentar de nuevo
+          </Button>
+
           <Button
             variant="outline"
             onClick={onClear}
@@ -1401,6 +1716,7 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
     );
   }
 
+  // Still pending (or hasn't fired yet) — show spinner
   return (
     <main
       className="min-h-screen flex items-center justify-center px-6"
@@ -1571,6 +1887,13 @@ export function AdminPanel() {
             >
               Fotos
             </TabsTrigger>
+            <TabsTrigger
+              value="stripe"
+              className="data-[state=active]:bg-surface-3 data-[state=active]:text-foreground text-text-dim font-mono text-xs uppercase tracking-wider"
+              data-ocid="admin.stripe.tab"
+            >
+              Stripe
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="albums">
             <AlbumsTab />
@@ -1578,8 +1901,167 @@ export function AdminPanel() {
           <TabsContent value="photos">
             <PhotosTab identity={identity} />
           </TabsContent>
+          <TabsContent value="stripe">
+            <StripeTab />
+          </TabsContent>
         </Tabs>
       </section>
     </main>
+  );
+}
+
+// ── Stripe Tab ───────────────────────────────────────────────────────────────
+
+function StripeTab() {
+  const { data: isConfigured, isLoading } = useIsStripeConfigured();
+  const setConfig = useSetStripeConfiguration();
+
+  const [secretKey, setSecretKey] = useState("");
+  const [countriesStr, setCountriesStr] = useState("ES, FR, DE, IT, PT");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!secretKey.trim()) {
+      toast.error("La clave secreta de Stripe es obligatoria");
+      return;
+    }
+    const allowedCountries = countriesStr
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+
+    const config: StripeConfiguration = {
+      secretKey: secretKey.trim(),
+      allowedCountries,
+    };
+
+    setConfig.mutate(config, {
+      onSuccess: () => {
+        toast.success("Configuración de Stripe guardada");
+        setSecretKey("");
+      },
+      onError: (e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(`Error al guardar: ${msg}`);
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-6 max-w-lg" data-ocid="admin.stripe.panel">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-lg font-medium text-foreground">
+          Configurar Stripe
+        </h2>
+        {!isLoading && (
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-[10px] uppercase tracking-widest ${
+              isConfigured
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+            }`}
+            data-ocid="admin.stripe.card"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${isConfigured ? "bg-emerald-400" : "bg-amber-400"}`}
+            />
+            {isConfigured ? "Activo" : "No configurado"}
+          </span>
+        )}
+      </div>
+
+      {!isLoading && !isConfigured && (
+        <div
+          className="flex items-start gap-3 px-4 py-3 rounded-sm border"
+          style={{
+            background: "oklch(0.25 0.08 55 / 0.12)",
+            borderColor: "oklch(0.65 0.12 55 / 0.30)",
+            color: "oklch(0.82 0.10 55)",
+          }}
+          data-ocid="admin.stripe.error_state"
+        >
+          <CreditCard className="w-4 h-4 mt-0.5 shrink-0" />
+          <p className="text-xs font-sans leading-relaxed">
+            Stripe no está configurado. Los visitantes no podrán comprar
+            fotografías hasta que introduzcas tu clave secreta.
+          </p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="stripe-key"
+            className="text-text-dim text-xs uppercase tracking-widest font-mono"
+          >
+            Clave secreta de Stripe
+          </Label>
+          <Input
+            id="stripe-key"
+            type="password"
+            value={secretKey}
+            onChange={(e) => setSecretKey(e.target.value)}
+            placeholder="sk_live_... o sk_test_..."
+            className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle font-mono text-xs"
+            autoComplete="off"
+            data-ocid="admin.stripe.input"
+          />
+          <p className="text-text-subtle text-xs font-sans">
+            Encontrarás tu clave secreta en el{" "}
+            <a
+              href="https://dashboard.stripe.com/apikeys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gold hover:underline"
+            >
+              panel de Stripe
+            </a>
+            .
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="stripe-countries"
+            className="text-text-dim text-xs uppercase tracking-widest font-mono"
+          >
+            Países permitidos (separados por coma)
+          </Label>
+          <Input
+            id="stripe-countries"
+            type="text"
+            value={countriesStr}
+            onChange={(e) => setCountriesStr(e.target.value)}
+            placeholder="ES, FR, DE, IT, PT"
+            className="bg-surface-2 border-border/50 text-foreground placeholder:text-text-subtle"
+            data-ocid="admin.stripe.input"
+          />
+          <p className="text-text-subtle text-xs font-sans">
+            Códigos de país ISO 3166-1 alpha-2 (p.ej. ES, FR, DE).
+          </p>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={setConfig.isPending || !secretKey.trim()}
+          className="bg-primary text-primary-foreground hover:bg-gold-glow gap-2"
+          data-ocid="admin.stripe.submit_button"
+        >
+          {setConfig.isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Guardando...
+            </>
+          ) : (
+            <>
+              <Check className="w-4 h-4" />
+              {isConfigured
+                ? "Actualizar configuración"
+                : "Guardar configuración"}
+            </>
+          )}
+        </Button>
+      </form>
+    </div>
   );
 }

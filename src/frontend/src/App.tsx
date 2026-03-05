@@ -1,14 +1,35 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
-import { Camera, LogIn, LogOut, Menu, Settings, X } from "lucide-react";
+import {
+  Camera,
+  LogIn,
+  LogOut,
+  Menu,
+  Settings,
+  ShoppingCart,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
+import { CartDrawer } from "./components/CartDrawer";
 import { useActor } from "./hooks/useActor";
+import { useCart } from "./hooks/useCart";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { AdminPanel } from "./views/AdminPanel";
 import { AlbumDetail } from "./views/AlbumDetail";
 import { AlbumsView } from "./views/AlbumsView";
 import { HomeGallery } from "./views/HomeGallery";
+import { PaymentFailure } from "./views/PaymentFailure";
+import { PaymentSuccess } from "./views/PaymentSuccess";
+
+// Check path-based routing for payment redirects
+function getInitialPaymentView(): "success" | "failure" | null {
+  if (typeof window === "undefined") return null;
+  const path = window.location.pathname;
+  if (path === "/payment-success") return "success";
+  if (path === "/payment-failure") return "failure";
+  return null;
+}
 
 type View =
   | { name: "home" }
@@ -37,11 +58,13 @@ function useSeededData() {
 interface NavProps {
   currentView: View;
   onNavigate: (view: View) => void;
+  onCartOpen: () => void;
 }
 
-function Nav({ currentView, onNavigate }: NavProps) {
+function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { identity, login, clear, isLoggingIn } = useInternetIdentity();
+  const { cartCount } = useCart();
   const isLoggedIn = !!identity && !identity.getPrincipal().isAnonymous();
 
   const navLinks = [
@@ -85,7 +108,7 @@ function Nav({ currentView, onNavigate }: NavProps) {
           </span>
         </button>
 
-        {/* Right side: desktop nav links + always-visible auth buttons */}
+        {/* Right side: desktop nav links + cart + auth buttons */}
         <div className="flex items-center gap-1">
           {/* Desktop-only nav links */}
           <div className="hidden sm:flex items-center gap-1">
@@ -105,6 +128,31 @@ function Nav({ currentView, onNavigate }: NavProps) {
               </button>
             ))}
           </div>
+
+          {/* Cart button */}
+          <button
+            type="button"
+            onClick={onCartOpen}
+            className="relative ml-1 p-2 text-text-dim hover:text-foreground hover:bg-surface-2 rounded-sm transition-all duration-200"
+            aria-label={`Carrito (${cartCount} artículos)`}
+            data-ocid="nav.toggle"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            {cartCount > 0 && (
+              <motion.span
+                key={cartCount}
+                initial={{ scale: 0.6 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center font-mono text-[9px] font-bold"
+                style={{
+                  background: "oklch(0.78 0.14 75)",
+                  color: "oklch(0.10 0.004 285)",
+                }}
+              >
+                {cartCount > 9 ? "9+" : cartCount}
+              </motion.span>
+            )}
+          </button>
 
           {/* Always-visible: Admin settings icon (when logged in) */}
           {isLoggedIn && (
@@ -165,7 +213,7 @@ function Nav({ currentView, onNavigate }: NavProps) {
             size="icon"
             className="sm:hidden text-text-dim hover:text-foreground ml-1"
             onClick={() => setMenuOpen(!menuOpen)}
-            data-ocid="nav.toggle"
+            data-ocid="nav.secondary_button"
             aria-label="Abrir menú"
           >
             {menuOpen ? (
@@ -280,6 +328,10 @@ function Footer() {
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>({ name: "home" });
+  const [cartOpen, setCartOpen] = useState(false);
+
+  // Path-based routing for Stripe payment redirects
+  const paymentView = getInitialPaymentView();
 
   useSeededData();
 
@@ -312,9 +364,54 @@ export default function App() {
     }
   }
 
+  // If the user was redirected from Stripe, show the payment result page
+  function goHome() {
+    window.location.assign("/");
+  }
+
+  if (paymentView === "success") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Nav
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          onCartOpen={() => setCartOpen(true)}
+        />
+        <div className="flex-1">
+          <PaymentSuccess onContinue={goHome} />
+        </div>
+        <Footer />
+        <Toaster theme="dark" richColors position="bottom-right" />
+        <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
+      </div>
+    );
+  }
+
+  if (paymentView === "failure") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Nav
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          onCartOpen={() => setCartOpen(true)}
+        />
+        <div className="flex-1">
+          <PaymentFailure onContinue={goHome} />
+        </div>
+        <Footer />
+        <Toaster theme="dark" richColors position="bottom-right" />
+        <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Nav currentView={currentView} onNavigate={handleNavigate} />
+      <Nav
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        onCartOpen={() => setCartOpen(true)}
+      />
 
       <div className="flex-1">
         <AnimatePresence mode="wait">
@@ -332,6 +429,7 @@ export default function App() {
 
       <Footer />
       <Toaster theme="dark" richColors position="bottom-right" />
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </div>
   );
 }

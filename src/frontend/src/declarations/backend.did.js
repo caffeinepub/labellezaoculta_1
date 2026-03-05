@@ -20,13 +20,13 @@ export const _CaffeineStorageRefillResult = IDL.Record({
   'topped_up_amount' : IDL.Opt(IDL.Nat),
 });
 export const AlbumId = IDL.Nat;
-export const PhotoId = IDL.Text;
 export const Photo = IDL.Record({
-  'id' : PhotoId,
+  'id' : IDL.Text,
   'title' : IDL.Text,
   'description' : IDL.Text,
   'blobId' : IDL.Text,
-  'albumId' : AlbumId,
+  'albumId' : IDL.Nat,
+  'price' : IDL.Nat,
   'uploadedAt' : IDL.Int,
 });
 export const UserRole = IDL.Variant({
@@ -35,14 +35,51 @@ export const UserRole = IDL.Variant({
   'guest' : IDL.Null,
 });
 export const Album = IDL.Record({
-  'id' : AlbumId,
+  'id' : IDL.Nat,
   'name' : IDL.Text,
   'createdAt' : IDL.Int,
   'description' : IDL.Text,
   'coverBlobId' : IDL.Opt(IDL.Text),
   'photoCount' : IDL.Nat,
 });
+export const ShoppingItem = IDL.Record({
+  'productName' : IDL.Text,
+  'currency' : IDL.Text,
+  'quantity' : IDL.Nat,
+  'priceInCents' : IDL.Nat,
+  'productDescription' : IDL.Text,
+});
+export const PhotoId = IDL.Text;
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
+export const StripeSessionStatus = IDL.Variant({
+  'completed' : IDL.Record({
+    'userPrincipal' : IDL.Opt(IDL.Text),
+    'response' : IDL.Text,
+  }),
+  'failed' : IDL.Record({ 'error' : IDL.Text }),
+});
+export const StripeConfiguration = IDL.Record({
+  'allowedCountries' : IDL.Vec(IDL.Text),
+  'secretKey' : IDL.Text,
+});
+export const http_header = IDL.Record({
+  'value' : IDL.Text,
+  'name' : IDL.Text,
+});
+export const http_request_result = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
+});
+export const TransformationInput = IDL.Record({
+  'context' : IDL.Vec(IDL.Nat8),
+  'response' : http_request_result,
+});
+export const TransformationOutput = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
+});
 
 export const idlService = IDL.Service({
   '_caffeineStorageBlobIsLive' : IDL.Func(
@@ -73,12 +110,17 @@ export const idlService = IDL.Service({
   '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'addPhoto' : IDL.Func(
-      [IDL.Text, IDL.Text, AlbumId, IDL.Text],
+      [IDL.Text, IDL.Text, AlbumId, IDL.Text, IDL.Nat],
       [IDL.Opt(Photo)],
       [],
     ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'createAlbum' : IDL.Func([IDL.Text, IDL.Text], [Album], []),
+  'createCheckoutSession' : IDL.Func(
+      [IDL.Vec(ShoppingItem), IDL.Text, IDL.Text],
+      [IDL.Text],
+      [],
+    ),
   'deleteAlbum' : IDL.Func([AlbumId], [IDL.Bool], []),
   'deletePhoto' : IDL.Func([PhotoId], [IDL.Bool], []),
   'getAlbum' : IDL.Func([AlbumId], [IDL.Opt(Album)], ['query']),
@@ -88,22 +130,30 @@ export const idlService = IDL.Service({
   'getPhoto' : IDL.Func([PhotoId], [IDL.Opt(Photo)], ['query']),
   'getPhotos' : IDL.Func([], [IDL.Vec(Photo)], ['query']),
   'getPhotosByAlbum' : IDL.Func([AlbumId], [IDL.Vec(Photo)], ['query']),
+  'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'isStripeConfigured' : IDL.Func([], [IDL.Bool], ['query']),
   'registerAsAdmin' : IDL.Func([], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'seedData' : IDL.Func([], [], []),
+  'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+  'transform' : IDL.Func(
+      [TransformationInput],
+      [TransformationOutput],
+      ['query'],
+    ),
   'updateAlbum' : IDL.Func(
       [AlbumId, IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],
       [IDL.Bool],
       [],
     ),
   'updatePhoto' : IDL.Func(
-      [PhotoId, IDL.Text, IDL.Text, AlbumId],
+      [PhotoId, IDL.Text, IDL.Text, AlbumId, IDL.Nat],
       [IDL.Bool],
       [],
     ),
@@ -124,13 +174,13 @@ export const idlFactory = ({ IDL }) => {
     'topped_up_amount' : IDL.Opt(IDL.Nat),
   });
   const AlbumId = IDL.Nat;
-  const PhotoId = IDL.Text;
   const Photo = IDL.Record({
-    'id' : PhotoId,
+    'id' : IDL.Text,
     'title' : IDL.Text,
     'description' : IDL.Text,
     'blobId' : IDL.Text,
-    'albumId' : AlbumId,
+    'albumId' : IDL.Nat,
+    'price' : IDL.Nat,
     'uploadedAt' : IDL.Int,
   });
   const UserRole = IDL.Variant({
@@ -139,14 +189,48 @@ export const idlFactory = ({ IDL }) => {
     'guest' : IDL.Null,
   });
   const Album = IDL.Record({
-    'id' : AlbumId,
+    'id' : IDL.Nat,
     'name' : IDL.Text,
     'createdAt' : IDL.Int,
     'description' : IDL.Text,
     'coverBlobId' : IDL.Opt(IDL.Text),
     'photoCount' : IDL.Nat,
   });
+  const ShoppingItem = IDL.Record({
+    'productName' : IDL.Text,
+    'currency' : IDL.Text,
+    'quantity' : IDL.Nat,
+    'priceInCents' : IDL.Nat,
+    'productDescription' : IDL.Text,
+  });
+  const PhotoId = IDL.Text;
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
+  const StripeSessionStatus = IDL.Variant({
+    'completed' : IDL.Record({
+      'userPrincipal' : IDL.Opt(IDL.Text),
+      'response' : IDL.Text,
+    }),
+    'failed' : IDL.Record({ 'error' : IDL.Text }),
+  });
+  const StripeConfiguration = IDL.Record({
+    'allowedCountries' : IDL.Vec(IDL.Text),
+    'secretKey' : IDL.Text,
+  });
+  const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
+  const http_request_result = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
+  });
+  const TransformationInput = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'response' : http_request_result,
+  });
+  const TransformationOutput = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
+  });
   
   return IDL.Service({
     '_caffeineStorageBlobIsLive' : IDL.Func(
@@ -177,12 +261,17 @@ export const idlFactory = ({ IDL }) => {
     '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'addPhoto' : IDL.Func(
-        [IDL.Text, IDL.Text, AlbumId, IDL.Text],
+        [IDL.Text, IDL.Text, AlbumId, IDL.Text, IDL.Nat],
         [IDL.Opt(Photo)],
         [],
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'createAlbum' : IDL.Func([IDL.Text, IDL.Text], [Album], []),
+    'createCheckoutSession' : IDL.Func(
+        [IDL.Vec(ShoppingItem), IDL.Text, IDL.Text],
+        [IDL.Text],
+        [],
+      ),
     'deleteAlbum' : IDL.Func([AlbumId], [IDL.Bool], []),
     'deletePhoto' : IDL.Func([PhotoId], [IDL.Bool], []),
     'getAlbum' : IDL.Func([AlbumId], [IDL.Opt(Album)], ['query']),
@@ -192,22 +281,30 @@ export const idlFactory = ({ IDL }) => {
     'getPhoto' : IDL.Func([PhotoId], [IDL.Opt(Photo)], ['query']),
     'getPhotos' : IDL.Func([], [IDL.Vec(Photo)], ['query']),
     'getPhotosByAlbum' : IDL.Func([AlbumId], [IDL.Vec(Photo)], ['query']),
+    'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'isStripeConfigured' : IDL.Func([], [IDL.Bool], ['query']),
     'registerAsAdmin' : IDL.Func([], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'seedData' : IDL.Func([], [], []),
+    'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+    'transform' : IDL.Func(
+        [TransformationInput],
+        [TransformationOutput],
+        ['query'],
+      ),
     'updateAlbum' : IDL.Func(
         [AlbumId, IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],
         [IDL.Bool],
         [],
       ),
     'updatePhoto' : IDL.Func(
-        [PhotoId, IDL.Text, IDL.Text, AlbumId],
+        [PhotoId, IDL.Text, IDL.Text, AlbumId, IDL.Nat],
         [IDL.Bool],
         [],
       ),

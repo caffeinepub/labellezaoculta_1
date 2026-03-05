@@ -11,7 +11,7 @@ import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
 export interface Album {
-  'id' : AlbumId,
+  'id' : bigint,
   'name' : string,
   'createdAt' : bigint,
   'description' : string,
@@ -20,14 +20,39 @@ export interface Album {
 }
 export type AlbumId = bigint;
 export interface Photo {
-  'id' : PhotoId,
+  'id' : string,
   'title' : string,
   'description' : string,
   'blobId' : string,
-  'albumId' : AlbumId,
+  'albumId' : bigint,
+  'price' : bigint,
   'uploadedAt' : bigint,
 }
 export type PhotoId = string;
+export interface ShoppingItem {
+  'productName' : string,
+  'currency' : string,
+  'quantity' : bigint,
+  'priceInCents' : bigint,
+  'productDescription' : string,
+}
+export interface StripeConfiguration {
+  'allowedCountries' : Array<string>,
+  'secretKey' : string,
+}
+export type StripeSessionStatus = {
+    'completed' : { 'userPrincipal' : [] | [string], 'response' : string }
+  } |
+  { 'failed' : { 'error' : string } };
+export interface TransformationInput {
+  'context' : Uint8Array,
+  'response' : http_request_result,
+}
+export interface TransformationOutput {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
 export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
@@ -42,6 +67,12 @@ export interface _CaffeineStorageRefillInformation {
 export interface _CaffeineStorageRefillResult {
   'success' : [] | [boolean],
   'topped_up_amount' : [] | [bigint],
+}
+export interface http_header { 'value' : string, 'name' : string }
+export interface http_request_result {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
 }
 export interface _SERVICE {
   '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
@@ -60,9 +91,16 @@ export interface _SERVICE {
   >,
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
-  'addPhoto' : ActorMethod<[string, string, AlbumId, string], [] | [Photo]>,
+  'addPhoto' : ActorMethod<
+    [string, string, AlbumId, string, bigint],
+    [] | [Photo]
+  >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'createAlbum' : ActorMethod<[string, string], Album>,
+  'createCheckoutSession' : ActorMethod<
+    [Array<ShoppingItem>, string, string],
+    string
+  >,
   'deleteAlbum' : ActorMethod<[AlbumId], boolean>,
   'deletePhoto' : ActorMethod<[PhotoId], boolean>,
   'getAlbum' : ActorMethod<[AlbumId], [] | [Album]>,
@@ -72,16 +110,23 @@ export interface _SERVICE {
   'getPhoto' : ActorMethod<[PhotoId], [] | [Photo]>,
   'getPhotos' : ActorMethod<[], Array<Photo>>,
   'getPhotosByAlbum' : ActorMethod<[AlbumId], Array<Photo>>,
+  'getStripeSessionStatus' : ActorMethod<[string], StripeSessionStatus>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'isStripeConfigured' : ActorMethod<[], boolean>,
   'registerAsAdmin' : ActorMethod<[], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'seedData' : ActorMethod<[], undefined>,
+  'setStripeConfiguration' : ActorMethod<[StripeConfiguration], undefined>,
+  'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
   'updateAlbum' : ActorMethod<
     [AlbumId, string, string, [] | [string]],
     boolean
   >,
-  'updatePhoto' : ActorMethod<[PhotoId, string, string, AlbumId], boolean>,
+  'updatePhoto' : ActorMethod<
+    [PhotoId, string, string, AlbumId, bigint],
+    boolean
+  >,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

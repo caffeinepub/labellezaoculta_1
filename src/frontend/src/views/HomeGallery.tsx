@@ -1,13 +1,21 @@
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Photo } from "../backend.d";
 import { MasonryGrid } from "../components/MasonryGrid";
 import { usePhotos } from "../hooks/useQueries";
+import { isDemo } from "../utils/imageUtils";
 import { PhotoDetail } from "./PhotoDetail";
 
 export function HomeGallery() {
-  const { data: photos = [], isLoading } = usePhotos();
+  const { data: allPhotos = [], isLoading } = usePhotos();
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+
+  // Show real photos only; if no real photos yet, fall back to demo photos
+  const photos = useMemo(() => {
+    const realPhotos = allPhotos.filter((p) => !isDemo(p.blobId));
+    if (realPhotos.length > 0) return realPhotos;
+    return allPhotos;
+  }, [allPhotos]);
 
   return (
     <main data-ocid="home.page">

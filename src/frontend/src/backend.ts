@@ -89,17 +89,13 @@ export class ExternalBlob {
         return this;
     }
 }
-export interface _CaffeineStorageRefillResult {
-    success?: boolean;
-    topped_up_amount?: bigint;
-}
-export interface Album {
-    id: AlbumId;
+export interface UserProfile {
     name: string;
-    createdAt: bigint;
-    description: string;
-    coverBlobId?: string;
-    photoCount: bigint;
+}
+export interface TransformationOutput {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<http_header>;
 }
 export type PhotoId = string;
 export interface _CaffeineStorageRefillInformation {
@@ -109,16 +105,62 @@ export interface _CaffeineStorageCreateCertificateResult {
     method: string;
     blob_hash: string;
 }
-export type AlbumId = bigint;
-export interface UserProfile {
+export interface http_header {
+    value: string;
     name: string;
 }
+export interface http_request_result {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<http_header>;
+}
+export interface Album {
+    id: bigint;
+    name: string;
+    createdAt: bigint;
+    description: string;
+    coverBlobId?: string;
+    photoCount: bigint;
+}
+export interface ShoppingItem {
+    productName: string;
+    currency: string;
+    quantity: bigint;
+    priceInCents: bigint;
+    productDescription: string;
+}
+export interface TransformationInput {
+    context: Uint8Array;
+    response: http_request_result;
+}
+export type StripeSessionStatus = {
+    __kind__: "completed";
+    completed: {
+        userPrincipal?: string;
+        response: string;
+    };
+} | {
+    __kind__: "failed";
+    failed: {
+        error: string;
+    };
+};
+export interface StripeConfiguration {
+    allowedCountries: Array<string>;
+    secretKey: string;
+}
+export type AlbumId = bigint;
+export interface _CaffeineStorageRefillResult {
+    success?: boolean;
+    topped_up_amount?: bigint;
+}
 export interface Photo {
-    id: PhotoId;
+    id: string;
     title: string;
     description: string;
     blobId: string;
-    albumId: AlbumId;
+    albumId: bigint;
+    price: bigint;
     uploadedAt: bigint;
 }
 export enum UserRole {
@@ -134,9 +176,10 @@ export interface backendInterface {
     _caffeineStorageRefillCashier(refillInformation: _CaffeineStorageRefillInformation | null): Promise<_CaffeineStorageRefillResult>;
     _caffeineStorageUpdateGatewayPrincipals(): Promise<void>;
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
-    addPhoto(title: string, description: string, albumId: AlbumId, blobId: string): Promise<Photo | null>;
+    addPhoto(title: string, description: string, albumId: AlbumId, blobId: string, price: bigint): Promise<Photo | null>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createAlbum(name: string, description: string): Promise<Album>;
+    createCheckoutSession(items: Array<ShoppingItem>, successUrl: string, cancelUrl: string): Promise<string>;
     deleteAlbum(id: AlbumId): Promise<boolean>;
     deletePhoto(id: PhotoId): Promise<boolean>;
     getAlbum(id: AlbumId): Promise<Album | null>;
@@ -146,15 +189,19 @@ export interface backendInterface {
     getPhoto(id: PhotoId): Promise<Photo | null>;
     getPhotos(): Promise<Array<Photo>>;
     getPhotosByAlbum(albumId: AlbumId): Promise<Array<Photo>>;
+    getStripeSessionStatus(sessionId: string): Promise<StripeSessionStatus>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    isStripeConfigured(): Promise<boolean>;
     registerAsAdmin(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     seedData(): Promise<void>;
+    setStripeConfiguration(config: StripeConfiguration): Promise<void>;
+    transform(input: TransformationInput): Promise<TransformationOutput>;
     updateAlbum(id: AlbumId, name: string, description: string, coverBlobId: string | null): Promise<boolean>;
-    updatePhoto(id: PhotoId, title: string, description: string, albumId: AlbumId): Promise<boolean>;
+    updatePhoto(id: PhotoId, title: string, description: string, albumId: AlbumId, price: bigint): Promise<boolean>;
 }
-import type { Album as _Album, AlbumId as _AlbumId, Photo as _Photo, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
+import type { Album as _Album, Photo as _Photo, StripeSessionStatus as _StripeSessionStatus, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _caffeineStorageBlobIsLive(arg0: Uint8Array): Promise<boolean> {
@@ -255,17 +302,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async addPhoto(arg0: string, arg1: string, arg2: AlbumId, arg3: string): Promise<Photo | null> {
+    async addPhoto(arg0: string, arg1: string, arg2: AlbumId, arg3: string, arg4: bigint): Promise<Photo | null> {
         if (this.processError) {
             try {
-                const result = await this.actor.addPhoto(arg0, arg1, arg2, arg3);
+                const result = await this.actor.addPhoto(arg0, arg1, arg2, arg3, arg4);
                 return from_candid_opt_n8(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.addPhoto(arg0, arg1, arg2, arg3);
+            const result = await this.actor.addPhoto(arg0, arg1, arg2, arg3, arg4);
             return from_candid_opt_n8(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -295,6 +342,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.createAlbum(arg0, arg1);
             return from_candid_Album_n11(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async createCheckoutSession(arg0: Array<ShoppingItem>, arg1: string, arg2: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.createCheckoutSession(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.createCheckoutSession(arg0, arg1, arg2);
+            return result;
         }
     }
     async deleteAlbum(arg0: AlbumId): Promise<boolean> {
@@ -423,6 +484,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getStripeSessionStatus(arg0: string): Promise<StripeSessionStatus> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getStripeSessionStatus(arg0);
+                return from_candid_StripeSessionStatus_n19(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getStripeSessionStatus(arg0);
+            return from_candid_StripeSessionStatus_n19(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
         if (this.processError) {
             try {
@@ -448,6 +523,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.isCallerAdmin();
+            return result;
+        }
+    }
+    async isStripeConfigured(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.isStripeConfigured();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.isStripeConfigured();
             return result;
         }
     }
@@ -493,37 +582,68 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateAlbum(arg0: AlbumId, arg1: string, arg2: string, arg3: string | null): Promise<boolean> {
+    async setStripeConfiguration(arg0: StripeConfiguration): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateAlbum(arg0, arg1, arg2, to_candid_opt_n19(this._uploadFile, this._downloadFile, arg3));
+                const result = await this.actor.setStripeConfiguration(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateAlbum(arg0, arg1, arg2, to_candid_opt_n19(this._uploadFile, this._downloadFile, arg3));
+            const result = await this.actor.setStripeConfiguration(arg0);
             return result;
         }
     }
-    async updatePhoto(arg0: PhotoId, arg1: string, arg2: string, arg3: AlbumId): Promise<boolean> {
+    async transform(arg0: TransformationInput): Promise<TransformationOutput> {
         if (this.processError) {
             try {
-                const result = await this.actor.updatePhoto(arg0, arg1, arg2, arg3);
+                const result = await this.actor.transform(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updatePhoto(arg0, arg1, arg2, arg3);
+            const result = await this.actor.transform(arg0);
+            return result;
+        }
+    }
+    async updateAlbum(arg0: AlbumId, arg1: string, arg2: string, arg3: string | null): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateAlbum(arg0, arg1, arg2, to_candid_opt_n22(this._uploadFile, this._downloadFile, arg3));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateAlbum(arg0, arg1, arg2, to_candid_opt_n22(this._uploadFile, this._downloadFile, arg3));
+            return result;
+        }
+    }
+    async updatePhoto(arg0: PhotoId, arg1: string, arg2: string, arg3: AlbumId, arg4: bigint): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updatePhoto(arg0, arg1, arg2, arg3, arg4);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updatePhoto(arg0, arg1, arg2, arg3, arg4);
             return result;
         }
     }
 }
 function from_candid_Album_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Album): Album {
     return from_candid_record_n12(_uploadFile, _downloadFile, value);
+}
+function from_candid_StripeSessionStatus_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _StripeSessionStatus): StripeSessionStatus {
+    return from_candid_variant_n20(_uploadFile, _downloadFile, value);
 }
 function from_candid_UserRole_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n18(_uploadFile, _downloadFile, value);
@@ -550,14 +670,14 @@ function from_candid_opt_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Ar
     return value.length === 0 ? null : value[0];
 }
 function from_candid_record_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    id: _AlbumId;
+    id: bigint;
     name: string;
     createdAt: bigint;
     description: string;
     coverBlobId: [] | [string];
     photoCount: bigint;
 }): {
-    id: AlbumId;
+    id: bigint;
     name: string;
     createdAt: bigint;
     description: string;
@@ -571,6 +691,18 @@ function from_candid_record_n12(_uploadFile: (file: ExternalBlob) => Promise<Uin
         description: value.description,
         coverBlobId: record_opt_to_undefined(from_candid_opt_n13(_uploadFile, _downloadFile, value.coverBlobId)),
         photoCount: value.photoCount
+    };
+}
+function from_candid_record_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    userPrincipal: [] | [string];
+    response: string;
+}): {
+    userPrincipal?: string;
+    response: string;
+} {
+    return {
+        userPrincipal: record_opt_to_undefined(from_candid_opt_n13(_uploadFile, _downloadFile, value.userPrincipal)),
+        response: value.response
     };
 }
 function from_candid_record_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
@@ -594,6 +726,35 @@ function from_candid_variant_n18(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): UserRole {
     return "admin" in value ? UserRole.admin : "user" in value ? UserRole.user : "guest" in value ? UserRole.guest : value;
 }
+function from_candid_variant_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    completed: {
+        userPrincipal: [] | [string];
+        response: string;
+    };
+} | {
+    failed: {
+        error: string;
+    };
+}): {
+    __kind__: "completed";
+    completed: {
+        userPrincipal?: string;
+        response: string;
+    };
+} | {
+    __kind__: "failed";
+    failed: {
+        error: string;
+    };
+} {
+    return "completed" in value ? {
+        __kind__: "completed",
+        completed: from_candid_record_n21(_uploadFile, _downloadFile, value.completed)
+    } : "failed" in value ? {
+        __kind__: "failed",
+        failed: value.failed
+    } : value;
+}
 function from_candid_vec_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Album>): Array<Album> {
     return value.map((x)=>from_candid_Album_n11(_uploadFile, _downloadFile, x));
 }
@@ -606,7 +767,7 @@ function to_candid__CaffeineStorageRefillInformation_n2(_uploadFile: (file: Exte
 function to_candid_opt_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _CaffeineStorageRefillInformation | null): [] | [__CaffeineStorageRefillInformation] {
     return value === null ? candid_none() : candid_some(to_candid__CaffeineStorageRefillInformation_n2(_uploadFile, _downloadFile, value));
 }
-function to_candid_opt_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: string | null): [] | [string] {
+function to_candid_opt_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: string | null): [] | [string] {
     return value === null ? candid_none() : candid_some(value);
 }
 function to_candid_record_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {

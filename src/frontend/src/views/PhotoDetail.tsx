@@ -1,8 +1,16 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ShoppingCart,
+  X,
+  ZoomIn,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { Photo } from "../backend.d";
+import { useCart } from "../hooks/useCart";
 import { useAlbum } from "../hooks/useQueries";
 import {
   getDemoPlaceholderImage,
@@ -65,7 +73,21 @@ export function PhotoDetail({
 }: PhotoDetailProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef<{
+    mouseX: number;
+    mouseY: number;
+    posX: number;
+    posY: number;
+  } | null>(null);
+
   const { data: album } = useAlbum(photo.albumId);
+  const { addToCart, cartItems } = useCart();
+
+  const isForSale = photo.price > BigInt(0);
+  const inCart = cartItems.some((i) => i.photo.id === photo.id);
 
   const currentIndex = allPhotos.findIndex((p) => p.id === photo.id);
   const hasPrev = currentIndex > 0;
@@ -82,6 +104,8 @@ export function PhotoDetail({
   useEffect(() => {
     let cancelled = false;
     setImageLoaded(false);
+    setZoom(100);
+    setPosition({ x: 0, y: 0 });
     const idx = allPhotos.findIndex((p) => p.id === photo.id);
     if (isDemo(photo.blobId)) {
       setImageUrl(getDemoPlaceholderImage(Math.max(idx, 0)));
@@ -104,6 +128,47 @@ export function PhotoDetail({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [onClose, goPrev, goNext]);
+
+  // Reset position when zoom goes back to 100
+  useEffect(() => {
+    if (zoom === 100) setPosition({ x: 0, y: 0 });
+  }, [zoom]);
+
+  const canDrag = zoom > 100;
+  const scale = zoom / 100;
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!canDrag) return;
+      e.preventDefault();
+      setIsDragging(true);
+      dragStart.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        posX: position.x,
+        posY: position.y,
+      };
+    },
+    [canDrag, position],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDragging || !dragStart.current) return;
+      const dx = e.clientX - dragStart.current.mouseX;
+      const dy = e.clientY - dragStart.current.mouseY;
+      setPosition({
+        x: dragStart.current.posX + dx,
+        y: dragStart.current.posY + dy,
+      });
+    },
+    [isDragging],
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    dragStart.current = null;
+  }, []);
 
   return (
     <AnimatePresence>
@@ -199,7 +264,14 @@ export function PhotoDetail({
           {/* Image area */}
           <div
             className="relative flex-1 flex items-center justify-center overflow-hidden min-h-[300px] lg:min-h-0"
-            style={{ background: "oklch(0.07 0.003 285)" }}
+            style={{
+              background: "oklch(0.07 0.003 285)",
+              cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "default",
+            }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
           >
             {!imageLoaded && (
               <Skeleton
@@ -213,8 +285,16 @@ export function PhotoDetail({
                 key={imageUrl}
                 src={imageUrl}
                 alt={photo.title}
-                className="max-w-full object-contain"
-                style={{ maxHeight: "88vh" }}
+                className="max-w-full object-contain select-none"
+                style={{
+                  maxHeight: "88vh",
+                  transform: `scale(${scale}) translate(${position.x / scale}px, ${position.y / scale}px)`,
+                  transition: isDragging
+                    ? "none"
+                    : "transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)",
+                  transformOrigin: "center center",
+                }}
+                draggable={false}
                 onLoad={() => setImageLoaded(true)}
                 initial={{ opacity: 0, scale: 1.025 }}
                 animate={
@@ -257,6 +337,51 @@ export function PhotoDetail({
                 </p>
               )}
 
+              {/* Price + Cart button */}
+              {isForSale && (
+                <div
+                  className="mb-5 pb-4 border-b border-border/20"
+                  data-ocid="photo.card"
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-subtle mb-2">
+                    Precio
+                  </p>
+                  <p
+                    className="font-display text-2xl font-light mb-3"
+                    style={{ color: "oklch(0.88 0.10 75)" }}
+                  >
+                    €{(Number(photo.price) / 100).toFixed(2)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!inCart) {
+                        addToCart(photo);
+                        toast.success("Añadido al carrito", {
+                          description: photo.title,
+                        });
+                      }
+                    }}
+                    disabled={inCart}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm font-mono text-xs uppercase tracking-widest transition-all"
+                    style={{
+                      background: inCart
+                        ? "oklch(0.78 0.14 75 / 0.15)"
+                        : "oklch(0.78 0.14 75)",
+                      color: inCart
+                        ? "oklch(0.88 0.10 75)"
+                        : "oklch(0.10 0.004 285)",
+                      border: "1px solid oklch(0.78 0.14 75 / 0.4)",
+                      cursor: inCart ? "default" : "pointer",
+                    }}
+                    data-ocid="photo.button"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    {inCart ? "En el carrito" : "Añadir al carrito"}
+                  </button>
+                </div>
+              )}
+
               {/* Album */}
               {album && (
                 <div className="mb-4">
@@ -273,6 +398,42 @@ export function PhotoDetail({
                   )}
                 </div>
               )}
+
+              {/* Zoom slider */}
+              <div className="mb-4 pb-4 border-b border-border/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <ZoomIn className="w-3 h-3 text-text-subtle" />
+                  <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-text-subtle">
+                    Zoom
+                  </p>
+                  <span
+                    className="ml-auto font-mono text-[10px] tabular-nums"
+                    style={{ color: "oklch(0.78 0.14 75)" }}
+                  >
+                    {zoom}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={100}
+                  max={200}
+                  step={5}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="w-full h-1.5 appearance-none rounded-full outline-none focus-visible:ring-1 focus-visible:ring-gold/40"
+                  style={{
+                    background: `linear-gradient(to right, oklch(0.78 0.14 75) 0%, oklch(0.78 0.14 75) ${zoom - 100}%, oklch(0.22 0.006 285) ${zoom - 100}%, oklch(0.22 0.006 285) 100%)`,
+                    accentColor: "oklch(0.78 0.14 75)",
+                  }}
+                  aria-label="Nivel de zoom"
+                  data-ocid="photo.toggle"
+                />
+                {canDrag && (
+                  <p className="text-text-subtle font-mono text-[10px] mt-1.5">
+                    Arrastra la imagen para moverla
+                  </p>
+                )}
+              </div>
 
               {/* Date */}
               <div className="mt-auto pt-4 border-t border-border/20">

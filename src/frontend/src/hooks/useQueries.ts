@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Album, AlbumId, Photo } from "../backend.d";
+import type { Album, AlbumId, Photo, StripeConfiguration } from "../backend.d";
 import { createActorWithConfig } from "../config";
 import { getSecretParameter } from "../utils/urlParams";
 import { useActor } from "./useActor";
@@ -126,40 +126,51 @@ export function useRegisterAsAdmin() {
   return useMutation({
     mutationFn: async () => {
       if (!identity) throw new Error("No autenticado");
+
+      // Only path that works: the app must be opened from the Caffeine panel,
+      // which injects `caffeineAdminToken` into the URL. Without that token,
+      // self-promotion via `registerAsAdmin()` is blocked by the backend.
+      const adminToken = getSecretParameter("caffeineAdminToken");
+
+      if (!adminToken) {
+        // No token in URL → user didn't open from the Caffeine panel
+        throw new Error("OPEN_FROM_CAFFEINE");
+      }
+
       const actor = await createActorWithConfig({ agentOptions: { identity } });
 
-      // Try with Caffeine admin token first (when opened from Caffeine panel)
-      const adminToken = getSecretParameter("caffeineAdminToken");
-      if (adminToken) {
-        try {
-          await actor._initializeAccessControlWithSecret(adminToken);
-          const isAdmin = await actor.isCallerAdmin();
-          if (isAdmin) return;
-        } catch {
-          // Token didn't work, fall through to registerAsAdmin
-        }
-      }
-
-      // Fall back to direct registerAsAdmin (first user to call becomes admin)
       try {
-        await actor.registerAsAdmin();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        // If the user is already registered as a non-admin user, that's the real error
-        throw new Error(
-          msg.includes("already") || msg.includes("registered")
-            ? "Tu cuenta ya está registrada como usuario. Solo el primer inicio de sesión puede reclamar el acceso de administrador."
-            : `No se pudo registrar como administrador: ${msg}`,
-        );
+        await actor._initializeAccessControlWithSecret(adminToken);
+        const isAdmin = await actor.isCallerAdmin();
+        if (isAdmin) return;
+      } catch {
+        // Token present but didn't grant admin
       }
 
-      // Verify assignment
+      // Token was present but admin check still failed
+      throw new Error("OPEN_FROM_CAFFEINE");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isRegistered"] });
+      queryClient.invalidateQueries({ queryKey: ["actor"] });
+    },
+  });
+}
+
+export function useRecoverAdminWithToken() {
+  const { identity } = useInternetIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (token: string) => {
+      if (!identity) throw new Error("No autenticado");
+      const actor = await createActorWithConfig({ agentOptions: { identity } });
+      await actor._initializeAccessControlWithSecret(token);
       const isAdmin = await actor.isCallerAdmin();
-      if (!isAdmin) {
+      if (!isAdmin)
         throw new Error(
-          "El acceso de administrador ya fue reclamado por otra cuenta.",
+          "El token no es válido o no tienes acceso de administrador.",
         );
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
@@ -244,18 +255,24 @@ export function useAddPhoto() {
       description,
       albumId,
       blobId,
+      price = BigInt(0),
     }: {
       title: string;
       description: string;
       albumId: AlbumId;
       blobId: string;
+      price?: bigint;
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.addPhoto(title, description, albumId, blobId);
+      return actor.addPhoto(title, description, albumId, blobId, price);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["photos"] });
       queryClient.invalidateQueries({ queryKey: ["albums"] });
+      // Also invalidate the per-album photo query so AlbumDetail refreshes
+      queryClient.invalidateQueries({
+        queryKey: ["photos", "album", variables.albumId.toString()],
+      });
     },
   });
 }
@@ -269,17 +286,45 @@ export function useUpdatePhoto() {
       title,
       description,
       albumId,
+      price = BigInt(0),
     }: {
       id: string;
       title: string;
       description: string;
       albumId: AlbumId;
+      price?: bigint;
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.updatePhoto(id, title, description, albumId);
+      return actor.updatePhoto(id, title, description, albumId, price);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["photos"] });
+    },
+  });
+}
+
+export function useIsStripeConfigured() {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["isStripeConfigured"],
+    queryFn: async () => {
+      if (!actor) return false;
+      return actor.isStripeConfigured();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetStripeConfiguration() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (config: StripeConfiguration) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.setStripeConfiguration(config);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isStripeConfigured"] });
     },
   });
 }

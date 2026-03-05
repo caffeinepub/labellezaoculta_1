@@ -36,11 +36,25 @@ async function getConfig() {
   return _configCache;
 }
 
+// Cache for fetched image object URLs to avoid re-fetching
+const _imageUrlCache = new Map<string, string>();
+
 export async function getImageUrl(blobId: string): Promise<string | null> {
   if (isDemo(blobId)) return null;
   const cfg = await getConfig();
   const GATEWAY_VERSION = "v1";
-  return `${cfg.backend_host}/${GATEWAY_VERSION}/blob/?blob_hash=${encodeURIComponent(blobId)}&owner_id=${encodeURIComponent(cfg.backend_canister_id)}&project_id=${encodeURIComponent(cfg.project_id)}`;
+  const directUrl = `${cfg.backend_host}/${GATEWAY_VERSION}/blob/?blob_hash=${encodeURIComponent(blobId)}&owner_id=${encodeURIComponent(cfg.backend_canister_id)}&project_id=${encodeURIComponent(cfg.project_id)}`;
+
+  // Return cached URL if available
+  if (_imageUrlCache.has(blobId)) {
+    return _imageUrlCache.get(blobId)!;
+  }
+
+  // Return the direct gateway URL — browsers render images by sniffing bytes,
+  // not by trusting Content-Type, so this works even if the server returns
+  // application/octet-stream. Avoids an extra round-trip fetch + blob URL creation.
+  _imageUrlCache.set(blobId, directUrl);
+  return directUrl;
 }
 
 // Demo placeholder image assets (used for seed data visuals)
