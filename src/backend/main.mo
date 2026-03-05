@@ -19,7 +19,7 @@ actor {
   include MixinAuthorization(accessControlState);
 
   // Types
-  type AlbumId = Text;
+  type AlbumId = Nat;
   type PhotoId = Text;
 
   public type Album = {
@@ -61,6 +61,7 @@ actor {
   let photos = Map.empty<PhotoId, Photo>();
   let userProfiles = Map.empty<Principal, UserProfile>();
   var seeded = false;
+  var nextAlbumId = 0;
 
   // Registration Function (NO auth check - anyone can call)
   public shared ({ caller }) func registerAsAdmin() : async () {
@@ -128,7 +129,8 @@ actor {
       Runtime.trap("Unauthorized: Only admins can create albums");
     };
 
-    let id = name # "-" # timestamp().toText();
+    let id = nextAlbumId;
+    nextAlbumId += 1;
     let album : Album = {
       id;
       name;
@@ -274,7 +276,7 @@ actor {
     seeded := true;
 
     let album1 : Album = {
-      id = "Urban Shadows";
+      id = 0;
       name = "Urban Shadows";
       description = "Capturing city life and architecture.";
       coverBlobId = ?"demo";
@@ -283,7 +285,7 @@ actor {
     };
 
     let album2 : Album = {
-      id = "Wild Nature";
+      id = 1;
       name = "Wild Nature";
       description = "Landscapes, wildlife, and outdoor adventures.";
       coverBlobId = ?"demo";
@@ -292,7 +294,7 @@ actor {
     };
 
     let album3 : Album = {
-      id = "Intimate Portraits";
+      id = 2;
       name = "Intimate Portraits";
       description = "Expressions and moments in people's lives.";
       coverBlobId = ?"demo";
@@ -310,7 +312,7 @@ actor {
         id = "photo1-urban";
         title = "Night Lights";
         description = "City skyline at dusk.";
-        albumId = "Urban Shadows";
+        albumId = 0;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -318,7 +320,7 @@ actor {
         id = "photo2-urban";
         title = "Street Art";
         description = "Graffiti in alleyway.";
-        albumId = "Urban Shadows";
+        albumId = 0;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -326,7 +328,7 @@ actor {
         id = "photo3-urban";
         title = "Reflections";
         description = "Buildings reflected in puddles.";
-        albumId = "Urban Shadows";
+        albumId = 0;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -338,7 +340,7 @@ actor {
         id = "photo1-nature";
         title = "Mountain Peaks";
         description = "Snow-capped mountain range.";
-        albumId = "Wild Nature";
+        albumId = 1;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -346,7 +348,7 @@ actor {
         id = "photo2-nature";
         title = "Forest Trail";
         description = "Sunlight through trees.";
-        albumId = "Wild Nature";
+        albumId = 1;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -354,7 +356,7 @@ actor {
         id = "photo3-nature";
         title = "River Rapids";
         description = "Water splashing over rocks.";
-        albumId = "Wild Nature";
+        albumId = 1;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -366,7 +368,7 @@ actor {
         id = "photo1-portraits";
         title = "Contemplation";
         description = "Person lost in thought.";
-        albumId = "Intimate Portraits";
+        albumId = 2;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -374,7 +376,7 @@ actor {
         id = "photo2-portraits";
         title = "Joyful Moment";
         description = "Child laughing.";
-        albumId = "Intimate Portraits";
+        albumId = 2;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -382,7 +384,7 @@ actor {
         id = "photo3-portraits";
         title = "Serenity";
         description = "Peaceful expression.";
-        albumId = "Intimate Portraits";
+        albumId = 2;
         blobId = "demo";
         uploadedAt = timestamp();
       },
@@ -398,5 +400,6 @@ actor {
     for (photo in intimatePortraitsPhotos.values()) {
       photos.add(photo.id, photo);
     };
+    nextAlbumId := 3;
   };
 };

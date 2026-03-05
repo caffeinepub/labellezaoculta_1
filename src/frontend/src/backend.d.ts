@@ -16,7 +16,7 @@ export interface Album {
     photoCount: bigint;
 }
 export type PhotoId = string;
-export type AlbumId = string;
+export type AlbumId = bigint;
 export interface UserProfile {
     name: string;
 }

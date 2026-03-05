@@ -18,7 +18,7 @@ export interface Album {
   'coverBlobId' : [] | [string],
   'photoCount' : bigint,
 }
-export type AlbumId = string;
+export type AlbumId = bigint;
 export interface Photo {
   'id' : PhotoId,
   'title' : string,

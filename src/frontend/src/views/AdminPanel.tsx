@@ -54,7 +54,7 @@ import {
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Album, Photo } from "../backend.d";
+import type { Album, AlbumId, Photo } from "../backend.d";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAddPhoto,
@@ -216,12 +216,12 @@ function PhotoFormDialog({
     id: string;
     title: string;
     description: string;
-    albumId: string;
+    albumId: AlbumId;
   }) => void;
   onUploadSubmit?: (data: {
     title: string;
     description: string;
-    albumId: string;
+    albumId: AlbumId;
     file: File;
   }) => void;
   isPending: boolean;
@@ -229,7 +229,10 @@ function PhotoFormDialog({
   const isEdit = !!photo;
   const [title, setTitle] = useState(photo?.title ?? "");
   const [description, setDescription] = useState(photo?.description ?? "");
-  const [albumId, setAlbumId] = useState(photo?.albumId ?? albums[0]?.id ?? "");
+  // Store albumId as string for Select component (SelectItem value must be string)
+  const [albumIdStr, setAlbumIdStr] = useState(
+    photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
+  );
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -239,7 +242,9 @@ function PhotoFormDialog({
     if (v) {
       setTitle(photo?.title ?? "");
       setDescription(photo?.description ?? "");
-      setAlbumId(photo?.albumId ?? albums[0]?.id ?? "");
+      setAlbumIdStr(
+        photo?.albumId?.toString() ?? albums[0]?.id?.toString() ?? "",
+      );
       setFile(null);
       setUploadProgress(0);
     }
@@ -257,17 +262,20 @@ function PhotoFormDialog({
       toast.error("El título es obligatorio");
       return;
     }
-    if (!albumId) {
+    if (!albumIdStr) {
       toast.error("Por favor selecciona un álbum");
       return;
     }
+
+    // Convert string to bigint for backend
+    const albumIdBigint: AlbumId = BigInt(albumIdStr);
 
     if (isEdit && onEditSubmit && photo) {
       onEditSubmit({
         id: photo.id,
         title: title.trim(),
         description: description.trim(),
-        albumId,
+        albumId: albumIdBigint,
       });
       return;
     }
@@ -284,26 +292,18 @@ function PhotoFormDialog({
         const { hash } = await storageClient.putFile(bytes, (pct) =>
           setUploadProgress(pct),
         );
-        onUploadSubmit({
-          title: title.trim(),
-          description: description.trim(),
-          albumId,
-          file,
-        });
-        // We pass the hash through a closure trick; onUploadSubmit receives file but we need hash
-        // Instead, call addPhoto directly in the parent
-        // Re-design: pass hash directly via a callback
+        // Pass the hash directly via the callback
         (
           onUploadSubmit as unknown as (d: {
             title: string;
             description: string;
-            albumId: string;
+            albumId: AlbumId;
             blobId: string;
           }) => void
         )({
           title: title.trim(),
           description: description.trim(),
-          albumId,
+          albumId: albumIdBigint,
           blobId: hash,
         });
       } catch (err) {
@@ -437,8 +437,8 @@ function PhotoFormDialog({
               Álbum
             </Label>
             <Select
-              value={albumId}
-              onValueChange={setAlbumId}
+              value={albumIdStr}
+              onValueChange={setAlbumIdStr}
               data-ocid="photo.select"
             >
               <SelectTrigger className="bg-surface-2 border-border/50 text-foreground">
@@ -447,8 +447,8 @@ function PhotoFormDialog({
               <SelectContent className="bg-popover border-border/50">
                 {albums.map((a) => (
                   <SelectItem
-                    key={a.id}
-                    value={a.id}
+                    key={a.id.toString()}
+                    value={a.id.toString()}
                     className="text-foreground focus:bg-surface-2"
                   >
                     {a.name}
@@ -496,7 +496,7 @@ function AlbumsTab() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editAlbum, setEditAlbum] = useState<Album | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<AlbumId | null>(null);
 
   const handleCreate = useCallback(
     ({ name, description }: { name: string; description: string }) => {
@@ -543,7 +543,7 @@ function AlbumsTab() {
   );
 
   const handleDelete = useCallback(() => {
-    if (!deleteId) return;
+    if (deleteId === null || deleteId === undefined) return;
     deleteAlbum.mutate(deleteId, {
       onSuccess: () => {
         toast.success("Álbum eliminado");
@@ -680,7 +680,7 @@ function AlbumsTab() {
 
       {/* Delete confirm */}
       <AlertDialog
-        open={!!deleteId}
+        open={deleteId !== null && deleteId !== undefined}
         onOpenChange={(v) => !v && setDeleteId(null)}
       >
         <AlertDialogContent
@@ -735,13 +735,15 @@ function PhotosTab({
   const [editPhoto, setEditPhoto] = useState<Photo | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const albumMap = Object.fromEntries(albums.map((a: Album) => [a.id, a.name]));
+  const albumMap = Object.fromEntries(
+    albums.map((a: Album) => [a.id.toString(), a.name]),
+  );
 
   const handleUpload = useCallback(
     (data: {
       title: string;
       description: string;
-      albumId: string;
+      albumId: AlbumId;
       blobId: string;
     }) => {
       addPhoto.mutate(data, {
@@ -761,7 +763,12 @@ function PhotosTab({
       title,
       description,
       albumId,
-    }: { id: string; title: string; description: string; albumId: string }) => {
+    }: {
+      id: string;
+      title: string;
+      description: string;
+      albumId: AlbumId;
+    }) => {
       updatePhoto.mutate(
         { id, title, description, albumId },
         {
@@ -882,7 +889,8 @@ function PhotosTab({
                     {photo.title}
                   </TableCell>
                   <TableCell className="text-text-dim text-xs">
-                    {albumMap[photo.albumId] ?? photo.albumId.slice(0, 8)}
+                    {albumMap[photo.albumId.toString()] ??
+                      photo.albumId.toString().slice(0, 8)}
                   </TableCell>
                   <TableCell className="text-text-dim text-xs font-mono">
                     {new Date(
@@ -930,7 +938,7 @@ function PhotosTab({
           handleUpload as unknown as (d: {
             title: string;
             description: string;
-            albumId: string;
+            albumId: AlbumId;
             file: File;
           }) => void
         }
@@ -1005,6 +1013,15 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
   }, [mutate]);
 
   if (registerAsAdmin.isError) {
+    const errorMsg =
+      registerAsAdmin.error instanceof Error
+        ? registerAsAdmin.error.message
+        : String(registerAsAdmin.error);
+    const isAlreadyClaimed =
+      errorMsg.includes("ya está registrada") ||
+      errorMsg.includes("ya fue reclamado") ||
+      errorMsg.includes("already");
+
     return (
       <main
         className="min-h-screen flex items-center justify-center px-6"
@@ -1029,10 +1046,15 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
             <h1 className="font-display text-2xl font-medium text-foreground mb-2">
               Acceso denegado
             </h1>
-            <p className="text-text-dim text-sm font-sans">
-              No se pudo registrar como administrador. Cierra sesión, vuelve a
-              entrar con Internet Identity y pulsa "Admin" de nuevo.
-            </p>
+            {isAlreadyClaimed ? (
+              <p className="text-text-dim text-sm font-sans">
+                El acceso de administrador ya fue reclamado por otra cuenta de
+                Internet Identity. Inicia sesión con la cuenta que usaste
+                originalmente.
+              </p>
+            ) : (
+              <p className="text-text-dim text-sm font-sans">{errorMsg}</p>
+            )}
           </div>
           <Button
             variant="outline"

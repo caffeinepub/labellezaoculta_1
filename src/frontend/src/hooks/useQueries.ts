@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Album, Photo } from "../backend.d";
+import type { Album, AlbumId, Photo } from "../backend.d";
 import { createActorWithConfig } from "../config";
 import { getSecretParameter } from "../utils/urlParams";
 import { useActor } from "./useActor";
@@ -43,27 +43,28 @@ export function useAlbums() {
   });
 }
 
-export function useAlbum(id: string | null) {
+export function useAlbum(id: bigint | null) {
   const { actor, isFetching } = useActor();
   return useQuery<Album | null>({
-    queryKey: ["album", id],
+    queryKey: ["album", id?.toString()],
     queryFn: async () => {
-      if (!actor || !id) return null;
+      if (!actor || id === null || id === undefined) return null;
       return actor.getAlbum(id);
     },
-    enabled: !!actor && !isFetching && !!id,
+    enabled: !!actor && !isFetching && id !== null && id !== undefined,
   });
 }
 
-export function usePhotosByAlbum(albumId: string | null) {
+export function usePhotosByAlbum(albumId: bigint | null) {
   const { actor, isFetching } = useActor();
   return useQuery<Photo[]>({
-    queryKey: ["photos", "album", albumId],
+    queryKey: ["photos", "album", albumId?.toString()],
     queryFn: async () => {
-      if (!actor || !albumId) return [];
+      if (!actor || albumId === null || albumId === undefined) return [];
       return actor.getPhotosByAlbum(albumId);
     },
-    enabled: !!actor && !isFetching && !!albumId,
+    enabled:
+      !!actor && !isFetching && albumId !== null && albumId !== undefined,
   });
 }
 
@@ -126,14 +127,38 @@ export function useRegisterAsAdmin() {
     mutationFn: async () => {
       if (!identity) throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
-      // First try with the Caffeine admin token if available in the URL/session.
+
+      // Try with Caffeine admin token first (when opened from Caffeine panel)
       const adminToken = getSecretParameter("caffeineAdminToken");
       if (adminToken) {
-        await actor._initializeAccessControlWithSecret(adminToken);
-      } else {
-        // Fall back to the open registerAsAdmin endpoint which makes the first
-        // authenticated caller the admin without requiring any token.
+        try {
+          await actor._initializeAccessControlWithSecret(adminToken);
+          const isAdmin = await actor.isCallerAdmin();
+          if (isAdmin) return;
+        } catch {
+          // Token didn't work, fall through to registerAsAdmin
+        }
+      }
+
+      // Fall back to direct registerAsAdmin (first user to call becomes admin)
+      try {
         await actor.registerAsAdmin();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // If the user is already registered as a non-admin user, that's the real error
+        throw new Error(
+          msg.includes("already") || msg.includes("registered")
+            ? "Tu cuenta ya está registrada como usuario. Solo el primer inicio de sesión puede reclamar el acceso de administrador."
+            : `No se pudo registrar como administrador: ${msg}`,
+        );
+      }
+
+      // Verify assignment
+      const isAdmin = await actor.isCallerAdmin();
+      if (!isAdmin) {
+        throw new Error(
+          "El acceso de administrador ya fue reclamado por otra cuenta.",
+        );
       }
     },
     onSuccess: () => {
@@ -173,7 +198,7 @@ export function useUpdateAlbum() {
       description,
       coverBlobId,
     }: {
-      id: string;
+      id: AlbumId;
       name: string;
       description: string;
       coverBlobId: string | null | undefined;
@@ -199,7 +224,7 @@ export function useDeleteAlbum() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: AlbumId) => {
       if (!actor) throw new Error("Not connected");
       return actor.deleteAlbum(id);
     },
@@ -222,7 +247,7 @@ export function useAddPhoto() {
     }: {
       title: string;
       description: string;
-      albumId: string;
+      albumId: AlbumId;
       blobId: string;
     }) => {
       if (!actor) throw new Error("Not connected");
@@ -248,7 +273,7 @@ export function useUpdatePhoto() {
       id: string;
       title: string;
       description: string;
-      albumId: string;
+      albumId: AlbumId;
     }) => {
       if (!actor) throw new Error("Not connected");
       return actor.updatePhoto(id, title, description, albumId);

@@ -1,28 +1,23 @@
 # Labellezaoculta
 
 ## Current State
-Full-stack photo gallery with admin panel. Users can view albums and photos. Admin can manage albums (create, rename, delete) and photos (upload, edit, delete). Authentication via Internet Identity.
-
-**Known bugs:**
-1. Navigation buttons (Admin login) not visible on some screen sizes - only hamburger icon shown
-2. Album renaming fails silently - no error message shown
-3. `registerAsAdmin()` in backend uses `AccessControl.initialize` with empty tokens `("", "")`, which registers the user as `#user` instead of `#admin` because the empty string doesn't match the `CAFFEINE_ADMIN_TOKEN`. This means authenticated users can never get admin permissions via the self-registration flow.
-4. `useActor.ts` (protected file) calls `_initializeAccessControlWithSecret("")` with empty token, which may cause the authenticated actor to malfunction.
+Gallery app with albums and photos. Admin access is broken: users get "access denied" because `_initializeAccessControlWithSecret` is called with an empty token in `useActor`, registering them as `#user`. Then `registerAsAdmin` can't elevate them. The `registerAsAdmin` backend function passes empty strings to `initialize()` which only works if `CAFFEINE_ADMIN_TOKEN` is also empty (it isn't).
 
 ## Requested Changes (Diff)
 
 ### Add
-- A new `selfRegisterFirstAdmin()` backend function that allows the first unauthenticated user to register as admin (bypass token check for first admin only)
-- Better error surfacing in the album rename flow
+- Backend: new `claimAdmin()` function that allows the first non-anonymous, unregistered caller to become admin without a token (first-come-first-served). If admin is already assigned, returns an error.
+- Backend: `isAdminClaimed()` query to check if an admin has already been registered.
 
 ### Modify
-- `registerAsAdmin()` in backend: change to assign the caller as `#admin` directly if no admin has been assigned yet (first-come-first-served), or as `#user` otherwise. Remove the token dependency entirely.
-- Nav: ensure Admin/login button is always visible regardless of screen width (not hidden on small screens behind hamburger only)
+- Frontend `useQueries.ts`: `useRegisterAsAdmin` mutation should call `actor.claimAdmin()` directly instead of requiring `caffeineAdminToken` from the URL. Still invalidates isAdmin/isRegistered queries on success.
+- Frontend `AdminPanel.tsx`: `AutoRegisterScreen` should handle the new error when admin is already claimed (show a different message explaining that admin is already taken).
 
 ### Remove
-- Nothing
+- Backend: remove `registerAsAdmin()` function that was broken (passed empty tokens).
 
 ## Implementation Plan
-1. Regenerate backend Motoko to fix `registerAsAdmin()` - it should assign `#admin` role directly without token check when no admin exists, and `#user` role otherwise
-2. Update frontend Nav to ensure login/Admin button is visible at all breakpoints
-3. Ensure error toasts are shown when album rename fails
+1. Add `claimAdmin()` and `isAdminClaimed()` to backend `main.mo`
+2. Remove broken `registerAsAdmin()` from `main.mo`
+3. Update `useRegisterAsAdmin` in `useQueries.ts` to call `actor.claimAdmin()`
+4. Update `AutoRegisterScreen` in `AdminPanel.tsx` to handle "admin already claimed" error message

@@ -97,7 +97,7 @@ export function AlbumsView({ onAlbumClick }: AlbumsViewProps) {
                 key={album.id}
                 album={album}
                 index={i}
-                onClick={(a) => onAlbumClick(a.id)}
+                onClick={(a) => onAlbumClick(a.id.toString())}
                 data-ocid={`albums.item.${i + 1}`}
               />
             ))}

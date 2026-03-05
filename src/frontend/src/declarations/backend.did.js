@@ -19,7 +19,7 @@ export const _CaffeineStorageRefillResult = IDL.Record({
   'success' : IDL.Opt(IDL.Bool),
   'topped_up_amount' : IDL.Opt(IDL.Nat),
 });
-export const AlbumId = IDL.Text;
+export const AlbumId = IDL.Nat;
 export const PhotoId = IDL.Text;
 export const Photo = IDL.Record({
   'id' : PhotoId,
@@ -123,7 +123,7 @@ export const idlFactory = ({ IDL }) => {
     'success' : IDL.Opt(IDL.Bool),
     'topped_up_amount' : IDL.Opt(IDL.Nat),
   });
-  const AlbumId = IDL.Text;
+  const AlbumId = IDL.Nat;
   const PhotoId = IDL.Text;
   const Photo = IDL.Record({
     'id' : PhotoId,

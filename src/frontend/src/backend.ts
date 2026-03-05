@@ -109,7 +109,7 @@ export interface _CaffeineStorageCreateCertificateResult {
     method: string;
     blob_hash: string;
 }
-export type AlbumId = string;
+export type AlbumId = bigint;
 export interface UserProfile {
     name: string;
 }

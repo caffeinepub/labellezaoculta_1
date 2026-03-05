@@ -15,9 +15,11 @@ interface AlbumDetailProps {
 }
 
 export function AlbumDetail({ albumId, onBack }: AlbumDetailProps) {
-  const { data: album, isLoading: albumLoading } = useAlbum(albumId);
+  // albumId is stored as string in the router state, convert to bigint for backend
+  const albumIdBigint: bigint | null = albumId ? BigInt(albumId) : null;
+  const { data: album, isLoading: albumLoading } = useAlbum(albumIdBigint);
   const { data: photos = [], isLoading: photosLoading } =
-    usePhotosByAlbum(albumId);
+    usePhotosByAlbum(albumIdBigint);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
 
   return (
