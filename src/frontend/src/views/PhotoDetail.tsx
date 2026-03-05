@@ -18,31 +18,10 @@ import {
   isDemo,
 } from "../utils/imageUtils";
 
-// Fetch image bytes and return a blob object URL so the browser always
-// gets a properly typed image regardless of the server's Content-Type header.
-async function fetchAsObjectUrl(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let mime = "image/jpeg";
-    if (bytes[0] === 0x89 && bytes[1] === 0x50) mime = "image/png";
-    else if (bytes[0] === 0x47 && bytes[1] === 0x49) mime = "image/gif";
-    else if (
-      bytes[0] === 0x52 &&
-      bytes[1] === 0x49 &&
-      bytes[8] === 0x57 &&
-      bytes[9] === 0x45 &&
-      bytes[10] === 0x42
-    )
-      mime = "image/webp";
-    const blob = new Blob([bytes], { type: mime });
-    return URL.createObjectURL(blob);
-  } catch {
-    return null;
-  }
-}
+// The browser renders images by sniffing bytes from the response body,
+// not by trusting the Content-Type header — so gateway URLs that return
+// application/octet-stream still display JPEG/PNG/WebP correctly.
+// No intermediate blob conversion is needed or used.
 
 interface PhotoDetailProps {
   photo: Photo;
@@ -136,11 +115,10 @@ export function PhotoDetail({
     if (isDemo(photo.blobId)) {
       setImageUrl(getDemoPlaceholderImage(Math.max(idx, 0)));
     } else {
-      getImageUrl(photo.blobId).then(async (directUrl) => {
-        if (cancelled || !directUrl) return;
-        // Fetch as blob URL so the browser gets the correct Content-Type
-        const objUrl = await fetchAsObjectUrl(directUrl);
-        if (!cancelled) setImageUrl(objUrl ?? directUrl);
+      // Use the gateway URL directly — the browser sniffs the image format
+      // from the response bytes regardless of the Content-Type header.
+      getImageUrl(photo.blobId).then((directUrl) => {
+        if (!cancelled && directUrl) setImageUrl(directUrl);
       });
     }
     return () => {

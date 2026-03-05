@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Album, AlbumId, Photo, StripeConfiguration } from "../backend.d";
 import { createActorWithConfig } from "../config";
-import { getSecretParameter } from "../utils/urlParams";
+import { clearStoredAdminToken, getStoredAdminToken } from "../utils/urlParams";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
@@ -70,17 +70,19 @@ export function usePhotosByAlbum(albumId: bigint | null) {
 
 export function useIsAdmin() {
   const { actor, isFetching } = useActor();
+  const { identity } = useInternetIdentity();
+  const isAuthenticated = !!identity && !identity.getPrincipal().isAnonymous();
   return useQuery<boolean>({
-    queryKey: ["isAdmin"],
+    queryKey: ["isAdmin", identity?.getPrincipal().toString() ?? "anon"],
     queryFn: async () => {
-      if (!actor) return false;
+      if (!actor || !isAuthenticated) return false;
       try {
         return await actor.isCallerAdmin();
       } catch {
         return false;
       }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isFetching && isAuthenticated,
     retry: false,
   });
 }
@@ -108,7 +110,8 @@ export function useInitializeAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (adminToken: string) => {
-      if (!identity) throw new Error("No autenticado");
+      if (!identity || identity.getPrincipal().isAnonymous())
+        throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
       await actor._initializeAccessControlWithSecret(adminToken);
     },
@@ -125,30 +128,25 @@ export function useRegisterAsAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (!identity) throw new Error("No autenticado");
+      if (!identity || identity.getPrincipal().isAnonymous()) {
+        throw new Error("No autenticado");
+      }
 
-      // Only path that works: the app must be opened from the Caffeine panel,
-      // which injects `caffeineAdminToken` into the URL. Without that token,
-      // self-promotion via `registerAsAdmin()` is blocked by the backend.
-      const adminToken = getSecretParameter("caffeineAdminToken");
+      // getStoredAdminToken reads from localStorage where captureAdminToken()
+      // saved it at page load (before Internet Identity redirect stripped the URL).
+      const adminToken = getStoredAdminToken();
 
       if (!adminToken) {
-        // No token in URL → user didn't open from the Caffeine panel
         throw new Error("OPEN_FROM_CAFFEINE");
       }
 
       const actor = await createActorWithConfig({ agentOptions: { identity } });
+      await actor._initializeAccessControlWithSecret(adminToken);
 
-      try {
-        await actor._initializeAccessControlWithSecret(adminToken);
-        const isAdmin = await actor.isCallerAdmin();
-        if (isAdmin) return;
-      } catch {
-        // Token present but didn't grant admin
+      const isAdmin = await actor.isCallerAdmin();
+      if (!isAdmin) {
+        throw new Error("OPEN_FROM_CAFFEINE");
       }
-
-      // Token was present but admin check still failed
-      throw new Error("OPEN_FROM_CAFFEINE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
@@ -163,7 +161,8 @@ export function useRecoverAdminWithToken() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (token: string) => {
-      if (!identity) throw new Error("No autenticado");
+      if (!identity || identity.getPrincipal().isAnonymous())
+        throw new Error("No autenticado");
       const actor = await createActorWithConfig({ agentOptions: { identity } });
       await actor._initializeAccessControlWithSecret(token);
       const isAdmin = await actor.isCallerAdmin();
@@ -171,6 +170,8 @@ export function useRecoverAdminWithToken() {
         throw new Error(
           "El token no es válido o no tienes acceso de administrador.",
         );
+      // Save valid token for future sessions
+      localStorage.setItem("caffeine_admin_token", token);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });

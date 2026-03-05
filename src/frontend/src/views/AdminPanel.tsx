@@ -68,7 +68,6 @@ import {
   useDeleteAlbum,
   useDeletePhoto,
   useIsAdmin,
-  useIsRegistered,
   useIsStripeConfigured,
   usePhotos,
   usePhotosByAlbum,
@@ -205,10 +204,8 @@ function AlbumCoverThumb({
     if (isDemo(photo.blobId)) {
       setUrl(getDemoPlaceholderImage(0));
     } else {
-      import("../utils/imageUtils").then(({ getImageUrl }) => {
-        getImageUrl(photo.blobId).then((u) => {
-          if (!cancelled) setUrl(u);
-        });
+      getImageUrl(photo.blobId).then((u) => {
+        if (!cancelled) setUrl(u);
       });
     }
     return () => {
@@ -1597,34 +1594,31 @@ function PhotosTab({
 }
 
 // ── Auto-Registration Screen ─────────────────────────────────────────────────
+// Called when the user is logged in but isCallerAdmin() returns false.
+// Automatically attempts to register as admin using the token captured at page load.
 
 function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
   const registerAsAdmin = useRegisterAsAdmin();
+  const queryClient = useQueryClient();
 
   const mutate = registerAsAdmin.mutate;
   useEffect(() => {
-    mutate(undefined, {
-      onError: () => {
-        // Error rendered below
-      },
-    });
-  }, [mutate]);
+    try {
+      mutate(undefined, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+        },
+        onError: () => {
+          // Error is rendered below
+        },
+      });
+    } catch {
+      // Guard against any synchronous throw
+    }
+  }, [mutate, queryClient]);
 
-  // Show the error/instructions screen as soon as we have an error
+  // Show access denied message as soon as registration fails
   if (registerAsAdmin.isError) {
-    const rawMsg =
-      registerAsAdmin.error instanceof Error
-        ? registerAsAdmin.error.message
-        : String(registerAsAdmin.error);
-
-    // Both OPEN_FROM_CAFFEINE and ALREADY_CLAIMED mean the same thing to the user:
-    // they need to open the app from the Caffeine panel.
-    const needsCaffeinePanel =
-      rawMsg === "OPEN_FROM_CAFFEINE" ||
-      rawMsg === "ALREADY_CLAIMED" ||
-      rawMsg.includes("already") ||
-      rawMsg.includes("claimed");
-
     return (
       <main
         className="min-h-screen flex items-center justify-center px-6 py-12"
@@ -1652,48 +1646,44 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
                 Acceso denegado
               </h1>
               <p className="text-text-dim text-sm font-sans leading-relaxed">
-                {needsCaffeinePanel
-                  ? "Para acceder como administrador, debes abrir la app desde el panel de Caffeine."
-                  : rawMsg}
+                Debes abrir la app desde el panel de Caffeine para acceder como
+                administrador.
               </p>
             </div>
           </div>
 
-          {/* How-to instructions box */}
-          {needsCaffeinePanel && (
-            <div
-              className="rounded-sm border border-border/40 bg-surface-2/50 px-4 py-4 space-y-2"
-              data-ocid="admin.panel"
-            >
-              <p className="text-text-dim text-xs font-mono uppercase tracking-widest mb-1">
-                ¿Cómo acceder?
-              </p>
-              <ol className="text-text-dim text-sm font-sans leading-relaxed space-y-1.5 list-decimal list-inside">
-                <li>
-                  Ve al panel de{" "}
-                  <span className="text-gold font-medium">caffeine.ai</span> y
-                  abre tu proyecto.
-                </li>
-                <li>
-                  Pulsa el botón{" "}
-                  <span className="text-foreground font-medium">
-                    "Abrir Borrador"
-                  </span>{" "}
-                  o{" "}
-                  <span className="text-foreground font-medium">
-                    "Previsualizar"
-                  </span>
-                  .
-                </li>
-                <li>
-                  La URL incluirá automáticamente tu token de acceso y entrarás
-                  como admin.
-                </li>
-              </ol>
-            </div>
-          )}
+          {/* Instructions box */}
+          <div
+            className="rounded-sm border border-border/40 bg-surface-2/50 px-4 py-4 space-y-2"
+            data-ocid="admin.panel"
+          >
+            <p className="text-text-dim text-xs font-mono uppercase tracking-widest mb-1">
+              ¿Cómo acceder?
+            </p>
+            <ol className="text-text-dim text-sm font-sans leading-relaxed space-y-1.5 list-decimal list-inside">
+              <li>
+                Ve al panel de{" "}
+                <span className="text-gold font-medium">caffeine.ai</span> y
+                abre tu proyecto.
+              </li>
+              <li>
+                Pulsa el botón{" "}
+                <span className="text-foreground font-medium">
+                  "Abrir Borrador"
+                </span>{" "}
+                o{" "}
+                <span className="text-foreground font-medium">
+                  "Previsualizar"
+                </span>
+                .
+              </li>
+              <li>
+                La URL incluirá automáticamente tu token de acceso y entrarás
+                como admin sin necesidad de ningún código adicional.
+              </li>
+            </ol>
+          </div>
 
-          {/* Retry button */}
           <Button
             type="button"
             onClick={() => window.location.reload()}
@@ -1716,7 +1706,7 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
     );
   }
 
-  // Still pending (or hasn't fired yet) — show spinner
+  // Registration in progress — show spinner
   return (
     <main
       className="min-h-screen flex items-center justify-center px-6"
@@ -1757,7 +1747,6 @@ export function AdminPanel() {
   const { login, clear, identity, isLoggingIn, isInitializing } =
     useInternetIdentity();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
-  useIsRegistered();
 
   const isLoggedIn = !!identity;
 

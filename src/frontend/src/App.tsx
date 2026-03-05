@@ -10,12 +10,11 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CartDrawer } from "./components/CartDrawer";
-import { useActor } from "./hooks/useActor";
 import { useCart } from "./hooks/useCart";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import { getSecretParameter } from "./utils/urlParams";
+import { captureAdminToken } from "./utils/urlParams";
 import { AdminPanel } from "./views/AdminPanel";
 import { AlbumDetail } from "./views/AlbumDetail";
 import { AlbumsView } from "./views/AlbumsView";
@@ -23,9 +22,11 @@ import { HomeGallery } from "./views/HomeGallery";
 import { PaymentFailure } from "./views/PaymentFailure";
 import { PaymentSuccess } from "./views/PaymentSuccess";
 
-// Capture admin token immediately on page load before any redirect can strip it from the URL
+// Capture admin token immediately on page load before any redirect can strip it from the URL.
+// Reads from ?caffeineAdminToken= (query string) or #caffeineAdminToken= (hash) and
+// persists to localStorage so it survives the Internet Identity redirect.
 if (typeof window !== "undefined") {
-  getSecretParameter("caffeineAdminToken");
+  captureAdminToken();
 }
 
 // Check path-based routing for payment redirects
@@ -43,20 +44,9 @@ type View =
   | { name: "album"; id: string }
   | { name: "admin" };
 
+// Seed data is disabled — the user has real content and doesn't need demo data.
 function useSeededData() {
-  const { actor, isFetching } = useActor();
-
-  useEffect(() => {
-    if (!actor || isFetching) return;
-    const key = "labellezaoculta_seeded_v1";
-    if (localStorage.getItem(key)) return;
-    actor
-      .seedData()
-      .then(() => localStorage.setItem(key, "1"))
-      .catch(() => {
-        /* ignore seed errors in production */
-      });
-  }, [actor, isFetching]);
+  // no-op
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────

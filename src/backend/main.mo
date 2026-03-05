@@ -13,8 +13,6 @@ import MixinAuthorization "authorization/MixinAuthorization";
 import Runtime "mo:core/Runtime";
 import OutCall "http-outcalls/outcall";
 
-
-
 actor {
   include MixinStorage();
 

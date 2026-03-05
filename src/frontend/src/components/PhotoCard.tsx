@@ -1,7 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, ShoppingCart } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Photo } from "../backend.d";
 import { useCart } from "../hooks/useCart";
@@ -11,38 +11,6 @@ import {
   isDemo,
 } from "../utils/imageUtils";
 import { ZoomOverlay } from "./ZoomOverlay";
-
-// Fetch image as object URL (fallback for CORS / Content-Type issues)
-async function fetchAsObjectUrl(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    // Detect MIME type from bytes
-    let mime = "image/jpeg";
-    if (bytes[0] === 0xff && bytes[1] === 0xd8) mime = "image/jpeg";
-    else if (bytes[0] === 0x89 && bytes[1] === 0x50) mime = "image/png";
-    else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)
-      mime = "image/gif";
-    else if (
-      bytes[0] === 0x52 &&
-      bytes[1] === 0x49 &&
-      bytes[2] === 0x46 &&
-      bytes[3] === 0x46 &&
-      bytes.length > 11 &&
-      bytes[8] === 0x57 &&
-      bytes[9] === 0x45 &&
-      bytes[10] === 0x42 &&
-      bytes[11] === 0x50
-    )
-      mime = "image/webp";
-    const blob = new Blob([bytes], { type: mime });
-    return URL.createObjectURL(blob);
-  } catch {
-    return null;
-  }
-}
 
 interface PhotoCardProps {
   photo: Photo;
@@ -90,20 +58,13 @@ export function PhotoCard({
       setImageUrl(placeholder);
       setLoading(false);
     } else {
-      // First try the direct URL; if that fails we fall back to a blob object URL
+      // Use the direct gateway URL — browsers render images by sniffing bytes,
+      // not by trusting Content-Type headers, so this works even when the server
+      // returns application/octet-stream. No extra fetch needed.
       getImageUrl(photo.blobId)
-        .then(async (directUrl) => {
-          if (cancelled) return;
-          if (!directUrl) {
-            setImageUrl(null);
-            setLoading(false);
-            return;
-          }
-          // Probe via fetch to check if the URL is actually reachable and
-          // to obtain a blob URL so the browser always has a valid Content-Type.
-          const objUrl = await fetchAsObjectUrl(directUrl);
+        .then((directUrl) => {
           if (!cancelled) {
-            setImageUrl(objUrl ?? directUrl);
+            setImageUrl(directUrl);
             setLoading(false);
           }
         })

@@ -36,23 +36,26 @@ async function getConfig() {
   return _configCache;
 }
 
-// Cache for fetched image object URLs to avoid re-fetching
+// Cache for resolved object URLs to avoid re-fetching
 const _imageUrlCache = new Map<string, string>();
 
-export async function getImageUrl(blobId: string): Promise<string | null> {
-  if (isDemo(blobId)) return null;
-  const cfg = await getConfig();
-  const GATEWAY_VERSION = "v1";
-  const directUrl = `${cfg.backend_host}/${GATEWAY_VERSION}/blob/?blob_hash=${encodeURIComponent(blobId)}&owner_id=${encodeURIComponent(cfg.backend_canister_id)}&project_id=${encodeURIComponent(cfg.project_id)}`;
+export async function getImageUrl(blobId: string): Promise<string> {
+  if (isDemo(blobId)) return "";
 
-  // Return cached URL if available
+  // Return cached URL
   if (_imageUrlCache.has(blobId)) {
     return _imageUrlCache.get(blobId)!;
   }
 
-  // Return the direct gateway URL — browsers render images by sniffing bytes,
-  // not by trusting Content-Type, so this works even if the server returns
-  // application/octet-stream. Avoids an extra round-trip fetch + blob URL creation.
+  const cfg = await getConfig();
+  const GATEWAY_VERSION = "v1";
+  const directUrl = `${cfg.backend_host}/${GATEWAY_VERSION}/blob/?blob_hash=${encodeURIComponent(blobId)}&owner_id=${encodeURIComponent(cfg.backend_canister_id)}&project_id=${encodeURIComponent(cfg.project_id)}`;
+
+  // Return the direct gateway URL immediately.
+  // The browser's <img> tag renders images by sniffing the bytes from the response body,
+  // NOT by trusting the Content-Type header — so even if the gateway returns
+  // "application/octet-stream", JPEG/PNG/WebP images display correctly in all major browsers.
+  // Doing a CORS pre-fetch to re-wrap the bytes was unreliable and added latency.
   _imageUrlCache.set(blobId, directUrl);
   return directUrl;
 }
