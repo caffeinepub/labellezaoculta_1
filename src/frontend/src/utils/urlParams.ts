@@ -197,63 +197,59 @@ export function getSecretFromHash(paramName: string): string | null {
 }
 
 /**
- * Gets a secret parameter with fallback chain: hash -> sessionStorage
+ * Gets a secret parameter with fallback chain: query string -> hash -> localStorage
  * This is the recommended way to handle sensitive parameters like admin tokens
- *
- * Security benefits over regular URL params:
- * - Hash fragments are not sent to the server
- * - Not logged in server access logs
- * - Not sent in HTTP Referer headers
- * - Automatically cleared from URL after extraction
  *
  * @param paramName - The name of the secret parameter
  * @returns The secret value if found, null otherwise
  */
 export function getSecretParameter(paramName: string): string | null {
-  // First check localStorage (most persistent, survives II redirect)
-  try {
-    const stored = localStorage.getItem("caffeine_admin_token");
-    if (stored) return stored;
-  } catch {
-    // ignore
+  // 1. Check regular query string first (Caffeine injects token here)
+  const urlParams = new URLSearchParams(window.location.search);
+  const qsValue = urlParams.get(paramName);
+  if (qsValue !== null) {
+    localStorage.setItem(paramName, qsValue);
+    return qsValue;
   }
-  return getSecretFromHash(paramName);
+
+  // 2. Check hash fragment
+  const fromHash = getSecretFromHash(paramName);
+  if (fromHash !== null) {
+    localStorage.setItem(paramName, fromHash);
+    return fromHash;
+  }
+
+  // 3. Fall back to localStorage (survives Internet Identity redirect)
+  return localStorage.getItem(paramName);
 }
 
-// ── Admin token helpers (used across the app) ─────────────────────────────────
-
-const ADMIN_TOKEN_KEY = "caffeine_admin_token";
+const ADMIN_TOKEN_KEY = "caffeineAdminToken";
 
 /**
- * Reads the admin token from the URL (?caffeineAdminToken=... or #caffeineAdminToken=...)
- * and saves it in localStorage so it survives the Internet Identity redirect.
- * Call this as early as possible on page load.
+ * Call once at page load (before any redirect) to capture the admin token
+ * from the URL and persist it to localStorage so it survives the
+ * Internet Identity redirect.
  */
 export function captureAdminToken(): void {
-  // Try query string first (Caffeine injects it here)
-  const urlParams = new URLSearchParams(window.location.search);
-  let token = urlParams.get("caffeineAdminToken");
-
-  // Fallback: hash fragment
-  if (!token) {
-    const hash = window.location.hash;
-    const qIdx = hash.indexOf("?");
-    if (qIdx !== -1) {
-      const hashParams = new URLSearchParams(hash.substring(qIdx + 1));
-      token = hashParams.get("caffeineAdminToken");
-    }
-    if (!token) {
-      // e.g. #caffeineAdminToken=xxx  (no slash)
-      const bare = new URLSearchParams(hash.substring(1));
-      token = bare.get("caffeineAdminToken");
-    }
+  // Query string (?caffeineAdminToken=...)
+  const qs = new URLSearchParams(window.location.search);
+  const fromQs = qs.get(ADMIN_TOKEN_KEY);
+  if (fromQs) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, fromQs);
+    return;
   }
 
-  if (token) {
-    try {
-      localStorage.setItem(ADMIN_TOKEN_KEY, token);
-    } catch {
-      // ignore
+  // Hash fragment (#caffeineAdminToken=... or #/?caffeineAdminToken=...)
+  const hash = window.location.hash;
+  if (hash && hash.length > 1) {
+    const hashContent = hash.substring(1);
+    const qStart = hashContent.indexOf("?");
+    const hashParams = new URLSearchParams(
+      qStart !== -1 ? hashContent.substring(qStart + 1) : hashContent,
+    );
+    const fromHash = hashParams.get(ADMIN_TOKEN_KEY);
+    if (fromHash) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, fromHash);
     }
   }
 }
@@ -262,20 +258,12 @@ export function captureAdminToken(): void {
  * Returns the stored admin token from localStorage, or null if not present.
  */
 export function getStoredAdminToken(): string | null {
-  try {
-    return localStorage.getItem(ADMIN_TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return localStorage.getItem(ADMIN_TOKEN_KEY);
 }
 
 /**
- * Removes the admin token from localStorage.
+ * Removes the stored admin token from localStorage.
  */
 export function clearStoredAdminToken(): void {
-  try {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-  } catch {
-    // ignore
-  }
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
 }
