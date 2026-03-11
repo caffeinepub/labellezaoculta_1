@@ -18,7 +18,6 @@ export interface Album {
   'coverBlobId' : [] | [string],
   'photoCount' : bigint,
 }
-export type AlbumId = bigint;
 export interface Photo {
   'id' : string,
   'title' : string,
@@ -28,7 +27,6 @@ export interface Photo {
   'price' : bigint,
   'uploadedAt' : bigint,
 }
-export type PhotoId = string;
 export interface ShoppingItem {
   'productName' : string,
   'currency' : string,
@@ -92,7 +90,7 @@ export interface _SERVICE {
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addPhoto' : ActorMethod<
-    [string, string, AlbumId, string, bigint],
+    [string, string, bigint, string, bigint],
     [] | [Photo]
   >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
@@ -101,15 +99,15 @@ export interface _SERVICE {
     [Array<ShoppingItem>, string, string],
     string
   >,
-  'deleteAlbum' : ActorMethod<[AlbumId], boolean>,
-  'deletePhoto' : ActorMethod<[PhotoId], boolean>,
-  'getAlbum' : ActorMethod<[AlbumId], [] | [Album]>,
+  'deleteAlbum' : ActorMethod<[bigint], boolean>,
+  'deletePhoto' : ActorMethod<[string], boolean>,
+  'getAlbum' : ActorMethod<[bigint], [] | [Album]>,
   'getAlbums' : ActorMethod<[], Array<Album>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
-  'getPhoto' : ActorMethod<[PhotoId], [] | [Photo]>,
+  'getPhoto' : ActorMethod<[string], [] | [Photo]>,
   'getPhotos' : ActorMethod<[], Array<Photo>>,
-  'getPhotosByAlbum' : ActorMethod<[AlbumId], Array<Photo>>,
+  'getPhotosByAlbum' : ActorMethod<[bigint], Array<Photo>>,
   'getStripeSessionStatus' : ActorMethod<[string], StripeSessionStatus>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
@@ -119,12 +117,9 @@ export interface _SERVICE {
   'seedData' : ActorMethod<[], undefined>,
   'setStripeConfiguration' : ActorMethod<[StripeConfiguration], undefined>,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
-  'updateAlbum' : ActorMethod<
-    [AlbumId, string, string, [] | [string]],
-    boolean
-  >,
+  'updateAlbum' : ActorMethod<[bigint, string, string, [] | [string]], boolean>,
   'updatePhoto' : ActorMethod<
-    [PhotoId, string, string, AlbumId, bigint],
+    [string, string, string, bigint, bigint],
     boolean
   >,
 }

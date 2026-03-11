@@ -1,16 +1,29 @@
 import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Photo } from "../backend.d";
 import { MasonryGrid } from "../components/MasonryGrid";
 import { usePhotos } from "../hooks/useQueries";
-import { isDemo } from "../utils/imageUtils";
+import { getImageUrl, isDemo } from "../utils/imageUtils";
 import { PhotoDetail } from "./PhotoDetail";
+
+const COVER_BLOBID_KEY = "labellezaoculta_cover_blobid";
 
 export function HomeGallery() {
   const { data: allPhotos = [], isLoading } = usePhotos();
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [heroUrl, setHeroUrl] = useState<string | null>(null);
 
-  // Show real photos only; if no real photos yet, fall back to demo photos
+  // Load the admin-set cover image from localStorage
+  useEffect(() => {
+    const blobId = localStorage.getItem(COVER_BLOBID_KEY);
+    if (blobId) {
+      getImageUrl(blobId).then((url) => {
+        if (url) setHeroUrl(url);
+      });
+    }
+  }, []);
+
+  // Show real photos only; if no real photos yet, fall back to all
   const photos = useMemo(() => {
     const realPhotos = allPhotos.filter((p) => !isDemo(p.blobId));
     if (realPhotos.length > 0) return realPhotos;
@@ -24,11 +37,13 @@ export function HomeGallery() {
         className="relative overflow-hidden pt-28 pb-16 px-6"
         data-ocid="home.section"
       >
-        {/* Background image — more visible, more atmospheric */}
+        {/* Background image — shows custom cover or fallback */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage: `url('/assets/generated/hero-bg.dim_1920x1080.jpg')`,
+            backgroundImage: heroUrl
+              ? `url('${heroUrl}')`
+              : `url('/assets/generated/hero-bg.dim_1920x1080.jpg')`,
             backgroundSize: "cover",
             backgroundPosition: "center 35%",
             opacity: 0.22,

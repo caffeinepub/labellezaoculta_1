@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Album, AlbumId, Photo, StripeConfiguration } from "../backend.d";
+import type { Album, Photo, StripeConfiguration } from "../backend.d";
 import { createActorWithConfig } from "../config";
-import { clearStoredAdminToken, getStoredAdminToken } from "../utils/urlParams";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
+
+// AlbumId is always bigint on the backend
+type AlbumId = bigint;
 
 // ── Query Hooks ───────────────────────────────────────────────────────────────
 
@@ -105,24 +107,6 @@ export function useIsRegistered() {
   });
 }
 
-export function useInitializeAdmin() {
-  const { identity } = useInternetIdentity();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (adminToken: string) => {
-      if (!identity || identity.getPrincipal().isAnonymous())
-        throw new Error("No autenticado");
-      const actor = await createActorWithConfig({ agentOptions: { identity } });
-      await actor._initializeAccessControlWithSecret(adminToken);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
-      queryClient.invalidateQueries({ queryKey: ["isRegistered"] });
-      queryClient.invalidateQueries({ queryKey: ["actor"] });
-    },
-  });
-}
-
 export function useRegisterAsAdmin() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
@@ -131,47 +115,10 @@ export function useRegisterAsAdmin() {
       if (!identity || identity.getPrincipal().isAnonymous()) {
         throw new Error("No autenticado");
       }
-
-      // getStoredAdminToken reads from localStorage where captureAdminToken()
-      // saved it at page load (before Internet Identity redirect stripped the URL).
-      const adminToken = getStoredAdminToken();
-
-      if (!adminToken) {
-        throw new Error("OPEN_FROM_CAFFEINE");
-      }
-
+      // Call registerAsAdmin() directly — the first authenticated user to call
+      // this becomes the admin. No tokens required.
       const actor = await createActorWithConfig({ agentOptions: { identity } });
-      await actor._initializeAccessControlWithSecret(adminToken);
-
-      const isAdmin = await actor.isCallerAdmin();
-      if (!isAdmin) {
-        throw new Error("OPEN_FROM_CAFFEINE");
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
-      queryClient.invalidateQueries({ queryKey: ["isRegistered"] });
-      queryClient.invalidateQueries({ queryKey: ["actor"] });
-    },
-  });
-}
-
-export function useRecoverAdminWithToken() {
-  const { identity } = useInternetIdentity();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (token: string) => {
-      if (!identity || identity.getPrincipal().isAnonymous())
-        throw new Error("No autenticado");
-      const actor = await createActorWithConfig({ agentOptions: { identity } });
-      await actor._initializeAccessControlWithSecret(token);
-      const isAdmin = await actor.isCallerAdmin();
-      if (!isAdmin)
-        throw new Error(
-          "El token no es válido o no tienes acceso de administrador.",
-        );
-      // Save valid token for future sessions
-      localStorage.setItem("caffeine_admin_token", token);
+      await actor.registerAsAdmin();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });

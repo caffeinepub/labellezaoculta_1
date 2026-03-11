@@ -97,7 +97,6 @@ export interface TransformationOutput {
     body: Uint8Array;
     headers: Array<http_header>;
 }
-export type PhotoId = string;
 export interface _CaffeineStorageRefillInformation {
     proposed_top_up_amount?: bigint;
 }
@@ -149,7 +148,6 @@ export interface StripeConfiguration {
     allowedCountries: Array<string>;
     secretKey: string;
 }
-export type AlbumId = bigint;
 export interface _CaffeineStorageRefillResult {
     success?: boolean;
     topped_up_amount?: bigint;
@@ -176,19 +174,19 @@ export interface backendInterface {
     _caffeineStorageRefillCashier(refillInformation: _CaffeineStorageRefillInformation | null): Promise<_CaffeineStorageRefillResult>;
     _caffeineStorageUpdateGatewayPrincipals(): Promise<void>;
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
-    addPhoto(title: string, description: string, albumId: AlbumId, blobId: string, price: bigint): Promise<Photo | null>;
+    addPhoto(title: string, description: string, albumId: bigint, blobId: string, price: bigint): Promise<Photo | null>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createAlbum(name: string, description: string): Promise<Album>;
     createCheckoutSession(items: Array<ShoppingItem>, successUrl: string, cancelUrl: string): Promise<string>;
-    deleteAlbum(id: AlbumId): Promise<boolean>;
-    deletePhoto(id: PhotoId): Promise<boolean>;
-    getAlbum(id: AlbumId): Promise<Album | null>;
+    deleteAlbum(id: bigint): Promise<boolean>;
+    deletePhoto(id: string): Promise<boolean>;
+    getAlbum(id: bigint): Promise<Album | null>;
     getAlbums(): Promise<Array<Album>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
-    getPhoto(id: PhotoId): Promise<Photo | null>;
+    getPhoto(id: string): Promise<Photo | null>;
     getPhotos(): Promise<Array<Photo>>;
-    getPhotosByAlbum(albumId: AlbumId): Promise<Array<Photo>>;
+    getPhotosByAlbum(albumId: bigint): Promise<Array<Photo>>;
     getStripeSessionStatus(sessionId: string): Promise<StripeSessionStatus>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
@@ -198,8 +196,8 @@ export interface backendInterface {
     seedData(): Promise<void>;
     setStripeConfiguration(config: StripeConfiguration): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
-    updateAlbum(id: AlbumId, name: string, description: string, coverBlobId: string | null): Promise<boolean>;
-    updatePhoto(id: PhotoId, title: string, description: string, albumId: AlbumId, price: bigint): Promise<boolean>;
+    updateAlbum(id: bigint, name: string, description: string, coverBlobId: string | null): Promise<boolean>;
+    updatePhoto(id: string, title: string, description: string, albumId: bigint, price: bigint): Promise<boolean>;
 }
 import type { Album as _Album, Photo as _Photo, StripeSessionStatus as _StripeSessionStatus, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -302,7 +300,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async addPhoto(arg0: string, arg1: string, arg2: AlbumId, arg3: string, arg4: bigint): Promise<Photo | null> {
+    async addPhoto(arg0: string, arg1: string, arg2: bigint, arg3: string, arg4: bigint): Promise<Photo | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.addPhoto(arg0, arg1, arg2, arg3, arg4);
@@ -358,7 +356,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async deleteAlbum(arg0: AlbumId): Promise<boolean> {
+    async deleteAlbum(arg0: bigint): Promise<boolean> {
         if (this.processError) {
             try {
                 const result = await this.actor.deleteAlbum(arg0);
@@ -372,7 +370,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async deletePhoto(arg0: PhotoId): Promise<boolean> {
+    async deletePhoto(arg0: string): Promise<boolean> {
         if (this.processError) {
             try {
                 const result = await this.actor.deletePhoto(arg0);
@@ -386,7 +384,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getAlbum(arg0: AlbumId): Promise<Album | null> {
+    async getAlbum(arg0: bigint): Promise<Album | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getAlbum(arg0);
@@ -442,7 +440,7 @@ export class Backend implements backendInterface {
             return from_candid_UserRole_n17(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getPhoto(arg0: PhotoId): Promise<Photo | null> {
+    async getPhoto(arg0: string): Promise<Photo | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getPhoto(arg0);
@@ -470,7 +468,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getPhotosByAlbum(arg0: AlbumId): Promise<Array<Photo>> {
+    async getPhotosByAlbum(arg0: bigint): Promise<Array<Photo>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getPhotosByAlbum(arg0);
@@ -610,7 +608,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateAlbum(arg0: AlbumId, arg1: string, arg2: string, arg3: string | null): Promise<boolean> {
+    async updateAlbum(arg0: bigint, arg1: string, arg2: string, arg3: string | null): Promise<boolean> {
         if (this.processError) {
             try {
                 const result = await this.actor.updateAlbum(arg0, arg1, arg2, to_candid_opt_n22(this._uploadFile, this._downloadFile, arg3));
@@ -624,7 +622,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updatePhoto(arg0: PhotoId, arg1: string, arg2: string, arg3: AlbumId, arg4: bigint): Promise<boolean> {
+    async updatePhoto(arg0: string, arg1: string, arg2: string, arg3: bigint, arg4: bigint): Promise<boolean> {
         if (this.processError) {
             try {
                 const result = await this.actor.updatePhoto(arg0, arg1, arg2, arg3, arg4);

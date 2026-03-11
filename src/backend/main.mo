@@ -1,23 +1,29 @@
 import Map "mo:core/Map";
 import Array "mo:core/Array";
-import Int "mo:core/Int";
-import Nat "mo:core/Nat";
-import Order "mo:core/Order";
 import Text "mo:core/Text";
+import Nat "mo:core/Nat";
+import Int "mo:core/Int";
 import Time "mo:core/Time";
+import Order "mo:core/Order";
+import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
-import MixinStorage "blob-storage/Mixin";
+import OutCall "http-outcalls/outcall";
 import Stripe "stripe/stripe";
+import MixinStorage "blob-storage/Mixin";
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
-import Runtime "mo:core/Runtime";
-import OutCall "http-outcalls/outcall";
 
 actor {
   include MixinStorage();
 
-  // Add explicit data extension type for permissionless Map data structures.
-  type _Album = {
+  let accessControlState = AccessControl.initState();
+  include MixinAuthorization(accessControlState);
+
+  public type UserProfile = {
+    name : Text;
+  };
+
+  type InternalAlbum = {
     id : Nat;
     name : Text;
     description : Text;
@@ -26,7 +32,7 @@ actor {
     photoCount : Nat;
   };
 
-  type _Photo = {
+  type InternalPhoto = {
     id : Text;
     title : Text;
     description : Text;
@@ -36,27 +42,24 @@ actor {
     price : Nat;
   };
 
-  type _UserProfile = {
+  public type Album = {
+    id : Nat;
     name : Text;
+    description : Text;
+    coverBlobId : ?Text;
+    createdAt : Int;
+    photoCount : Nat;
   };
 
-  // Authorization
-  let accessControlState = AccessControl.initState();
-  include MixinAuthorization(accessControlState);
-
-  // Stripe integration
-  var stripeConfig : ?Stripe.StripeConfiguration = null;
-  var adminAssigned = false;
-
-  // Types
-  type AlbumId = Nat;
-  type PhotoId = Text;
-
-  public type Album = _Album;
-
-  public type Photo = _Photo;
-
-  public type UserProfile = _UserProfile;
+  public type Photo = {
+    id : Text;
+    title : Text;
+    description : Text;
+    albumId : Nat;
+    blobId : Text;
+    uploadedAt : Int;
+    price : Nat;
+  };
 
   module Album {
     public func compare(a1 : Album, a2 : Album) : Order.Order {
@@ -70,14 +73,14 @@ actor {
     };
   };
 
-  // State
-  let albums = Map.empty<AlbumId, _Album>();
-  let photos = Map.empty<PhotoId, _Photo>();
-  let userProfiles = Map.empty<Principal, _UserProfile>();
+  let albums = Map.empty<Nat, InternalAlbum>();
+  let photos = Map.empty<Text, InternalPhoto>();
+  let userProfiles = Map.empty<Principal, UserProfile>();
   var seeded = false;
   var nextAlbumId = 0;
+  var adminAssigned = false;
+  var stripeConfig : ?Stripe.StripeConfiguration = null;
 
-  // Registration Function - first caller becomes admin
   public shared ({ caller }) func registerAsAdmin() : async () {
     if (caller.isAnonymous()) {
       Runtime.trap("Los usuarios anónimos no pueden registrarse como administrador");
@@ -92,10 +95,12 @@ actor {
   };
 
   public query ({ caller }) func isStripeConfigured() : async Bool {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("No tienes permisos para verificar la configuración de Stripe. Solo administradores pueden hacerlo.");
+    };
     stripeConfig != null;
   };
 
-  // User Profile Functions - User-only access
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("No tienes permisos para acceder a tu perfil. Solo usuarios autenticados pueden hacerlo.");
@@ -117,7 +122,6 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Stripe Configuration - Admin-only
   public shared ({ caller }) func setStripeConfiguration(config : Stripe.StripeConfiguration) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para configurar Stripe. Solo administradores pueden hacerlo.");
@@ -125,7 +129,6 @@ actor {
     stripeConfig := ?config;
   };
 
-  // Create Checkout Session - User-only (authenticated users can purchase)
   public shared ({ caller }) func createCheckoutSession(items : [Stripe.ShoppingItem], successUrl : Text, cancelUrl : Text) : async Text {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("No tienes permisos para crear sesiones de pago. Solo usuarios autenticados pueden hacerlo.");
@@ -147,7 +150,6 @@ actor {
     };
   };
 
-  // Get Stripe Session Status - User-only
   public shared ({ caller }) func getStripeSessionStatus(sessionId : Text) : async Stripe.StripeSessionStatus {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("No tienes permisos para verificar el estado de pagos. Solo usuarios autenticados pueden hacerlo.");
@@ -162,7 +164,6 @@ actor {
     };
   };
 
-  // Transform function for HTTP outcalls - No auth needed (internal use)
   public query ({ caller }) func transform(input : OutCall.TransformationInput) : async OutCall.TransformationOutput {
     OutCall.transform(input);
   };
@@ -171,31 +172,60 @@ actor {
     Time.now();
   };
 
-  // Query functions - Guest access (anyone can view)
-  public query ({ caller }) func getAlbums() : async [Album] {
-    albums.values().toArray().sort();
+  func toPublicAlbum(internal : InternalAlbum) : Album {
+    {
+      id = internal.id;
+      name = internal.name;
+      description = internal.description;
+      coverBlobId = internal.coverBlobId;
+      createdAt = internal.createdAt;
+      photoCount = internal.photoCount;
+    };
   };
 
-  public query ({ caller }) func getAlbum(id : AlbumId) : async ?Album {
-    albums.get(id);
+  func toPublicPhoto(internal : InternalPhoto) : Photo {
+    {
+      id = internal.id;
+      title = internal.title;
+      description = internal.description;
+      albumId = internal.albumId;
+      blobId = internal.blobId;
+      uploadedAt = internal.uploadedAt;
+      price = internal.price;
+    };
+  };
+
+  // Public queries - no authorization needed (accessible to guests)
+  public query ({ caller }) func getAlbums() : async [Album] {
+    albums.values().toArray().map(toPublicAlbum).sort();
+  };
+
+  public query ({ caller }) func getAlbum(id : Nat) : async ?Album {
+    switch (albums.get(id)) {
+      case (null) { null };
+      case (?internal) { ?toPublicAlbum(internal) };
+    };
   };
 
   public query ({ caller }) func getPhotos() : async [Photo] {
-    photos.values().toArray().sort();
+    photos.values().toArray().map(toPublicPhoto).sort();
   };
 
-  public query ({ caller }) func getPhotosByAlbum(albumId : AlbumId) : async [Photo] {
+  public query ({ caller }) func getPhotosByAlbum(albumId : Nat) : async [Photo] {
     let filtered = photos.values().toArray().filter(
       func(p) { p.albumId == albumId }
     );
-    filtered.sort();
+    filtered.map(toPublicPhoto).sort();
   };
 
-  public query ({ caller }) func getPhoto(id : PhotoId) : async ?Photo {
-    photos.get(id);
+  public query ({ caller }) func getPhoto(id : Text) : async ?Photo {
+    switch (photos.get(id)) {
+      case (null) { null };
+      case (?internal) { ?toPublicPhoto(internal) };
+    };
   };
 
-  // Admin-only CRUD operations
+  // Admin-only functions
   public shared ({ caller }) func createAlbum(name : Text, description : Text) : async Album {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para crear albums. Solo administradores pueden hacerlo.");
@@ -203,7 +233,7 @@ actor {
 
     let id = nextAlbumId;
     nextAlbumId += 1;
-    let album : _Album = {
+    let album : InternalAlbum = {
       id;
       name;
       description;
@@ -212,10 +242,10 @@ actor {
       photoCount = 0;
     };
     albums.add(id, album);
-    album;
+    toPublicAlbum(album);
   };
 
-  public shared ({ caller }) func updateAlbum(id : AlbumId, name : Text, description : Text, coverBlobId : ?Text) : async Bool {
+  public shared ({ caller }) func updateAlbum(id : Nat, name : Text, description : Text, coverBlobId : ?Text) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para editar album. Solo administradores pueden hacerlo.");
     };
@@ -223,11 +253,11 @@ actor {
     switch (albums.get(id)) {
       case (null) { false };
       case (?oldAlbum) {
-        let updatedAlbum : _Album = {
+        let updatedAlbum : InternalAlbum = {
           oldAlbum with
           name;
           description;
-          coverBlobId
+          coverBlobId;
         };
         albums.add(id, updatedAlbum);
         true;
@@ -235,7 +265,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deleteAlbum(id : AlbumId) : async Bool {
+  public shared ({ caller }) func deleteAlbum(id : Nat) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para eliminar albums. Solo administradores pueden hacerlo.");
     };
@@ -244,10 +274,7 @@ actor {
       case (null) { false };
       case (?_) {
         albums.remove(id);
-
-        // Remove photos in the album
-        let photoIter = photos.entries();
-        let filteredPhotos = photoIter.toArray().filter(
+        let filteredPhotos = photos.entries().toArray().filter(
           func((_, p)) { p.albumId != id }
         );
         photos.clear();
@@ -259,7 +286,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func addPhoto(title : Text, description : Text, albumId : AlbumId, blobId : Text, price : Nat) : async ?Photo {
+  public shared ({ caller }) func addPhoto(title : Text, description : Text, albumId : Nat, blobId : Text, price : Nat) : async ?Photo {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para añadir fotos. Solamente administradores pueden hacerlo.");
     };
@@ -268,7 +295,7 @@ actor {
       case (null) { null };
       case (?_) {
         let id = title # timestamp().toText() # blobId;
-        let photo : _Photo = {
+        let photo : InternalPhoto = {
           id;
           title;
           description;
@@ -278,11 +305,9 @@ actor {
           uploadedAt = timestamp();
         };
         photos.add(id, photo);
-
-        // Update album photo count
         switch (albums.get(albumId)) {
           case (?album) {
-            let updatedAlbum : _Album = {
+            let updatedAlbum : InternalAlbum = {
               album with
               photoCount = album.photoCount + 1;
             };
@@ -290,12 +315,12 @@ actor {
           };
           case (null) { () };
         };
-        ?photo;
+        ?toPublicPhoto(photo);
       };
     };
   };
 
-  public shared ({ caller }) func updatePhoto(id : PhotoId, title : Text, description : Text, albumId : AlbumId, price : Nat) : async Bool {
+  public shared ({ caller }) func updatePhoto(id : Text, title : Text, description : Text, albumId : Nat, price : Nat) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para editar fotos. Solamente administradores pueden hacerlo.");
     };
@@ -303,7 +328,7 @@ actor {
     switch (photos.get(id)) {
       case (null) { false };
       case (?oldPhoto) {
-        let updatedPhoto : _Photo = {
+        let updatedPhoto : InternalPhoto = {
           oldPhoto with
           title;
           description;
@@ -316,7 +341,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deletePhoto(id : PhotoId) : async Bool {
+  public shared ({ caller }) func deletePhoto(id : Text) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("No tienes permisos para eliminar fotos. Solamente administradores pueden hacerlo.");
     };
@@ -325,11 +350,9 @@ actor {
       case (null) { false };
       case (?photo) {
         photos.remove(id);
-
-        // Update album photo count
         switch (albums.get(photo.albumId)) {
           case (?album) {
-            let updatedAlbum : _Album = {
+            let updatedAlbum : InternalAlbum = {
               album with
               photoCount = if (album.photoCount > 0) { album.photoCount - 1 } else { 0 };
             };
@@ -342,27 +365,22 @@ actor {
     };
   };
 
-  // Seed data - Guest access (anyone can call, runs once)
   public shared ({ caller }) func seedData() : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("No tienes permisos para inicializar datos. Solo administradores pueden hacerlo.");
+    };
+
     if (seeded) { return () };
     seeded := true;
 
     let albumsData = [
       { name = "Urban Shadows"; desc = "Capturing city life."; photosCount = 3 },
-      {
-        name = "Wild Nature";
-        desc = "Landscapes and wildlife.";
-        photosCount = 3;
-      },
-      {
-        name = "Intimate Portraits";
-        desc = "People expressions.";
-        photosCount = 3;
-      },
+      { name = "Wild Nature"; desc = "Landscapes and wildlife."; photosCount = 3 },
+      { name = "Intimate Portraits"; desc = "People expressions."; photosCount = 3 },
     ];
 
     for (albumData in albumsData.values()) {
-      let album : _Album = {
+      let album : InternalAlbum = {
         id = nextAlbumId;
         name = albumData.name;
         description = albumData.desc;
@@ -375,22 +393,19 @@ actor {
     };
 
     let photosData = [
-      // Urban Shadows
       { title = "Night Lights"; albumId = 0; desc = "City skyline" },
       { title = "Street Art"; albumId = 0; desc = "Graffiti" },
       { title = "Reflections"; albumId = 0; desc = "Puddles" },
-      // Wild Nature
       { title = "Mountain Peaks"; albumId = 1; desc = "Mountains" },
       { title = "Forest Trail"; albumId = 1; desc = "Sunlight" },
       { title = "River Rapids"; albumId = 1; desc = "Water" },
-      // Intimate Portraits
       { title = "Contemplation"; albumId = 2; desc = "Thinking" },
       { title = "Joyful Moment"; albumId = 2; desc = "Laughing" },
       { title = "Serenity"; albumId = 2; desc = "Peaceful" },
     ];
 
     for (photoData in photosData.values()) {
-      let photo : _Photo = {
+      let photo : InternalPhoto = {
         id = photoData.title # timestamp().toText() # "demo";
         title = photoData.title;
         description = photoData.desc;
@@ -403,4 +418,3 @@ actor {
     };
   };
 };
-

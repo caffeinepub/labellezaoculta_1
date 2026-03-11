@@ -14,20 +14,12 @@ import { useCallback, useState } from "react";
 import { CartDrawer } from "./components/CartDrawer";
 import { useCart } from "./hooks/useCart";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import { captureAdminToken } from "./utils/urlParams";
 import { AdminPanel } from "./views/AdminPanel";
 import { AlbumDetail } from "./views/AlbumDetail";
 import { AlbumsView } from "./views/AlbumsView";
 import { HomeGallery } from "./views/HomeGallery";
 import { PaymentFailure } from "./views/PaymentFailure";
 import { PaymentSuccess } from "./views/PaymentSuccess";
-
-// Capture admin token immediately on page load before any redirect can strip it from the URL.
-// Reads from ?caffeineAdminToken= (query string) or #caffeineAdminToken= (hash) and
-// persists to localStorage so it survives the Internet Identity redirect.
-if (typeof window !== "undefined") {
-  captureAdminToken();
-}
 
 // Check path-based routing for payment redirects
 function getInitialPaymentView(): "success" | "failure" | null {
@@ -64,8 +56,16 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
   const isLoggedIn = !!identity && !identity.getPrincipal().isAnonymous();
 
   const navLinks = [
-    { label: "Galería", view: { name: "home" } as View },
-    { label: "Álbumes", view: { name: "albums" } as View },
+    {
+      label: "Galería",
+      view: { name: "home" } as View,
+      ocid: "nav.gallery_link",
+    },
+    {
+      label: "Álbumes",
+      view: { name: "albums" } as View,
+      ocid: "nav.albums_link",
+    },
   ];
 
   function isActive(view: View): boolean {
@@ -118,7 +118,7 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
                     ? "text-gold bg-primary/10"
                     : "text-text-dim hover:text-foreground hover:bg-surface-2"
                 }`}
-                data-ocid={`nav.${link.label.toLowerCase()}.link`}
+                data-ocid={link.ocid}
               >
                 {link.label}
               </button>
@@ -131,7 +131,7 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
             onClick={onCartOpen}
             className="relative ml-1 p-2 text-text-dim hover:text-foreground hover:bg-surface-2 rounded-sm transition-all duration-200"
             aria-label={`Carrito (${cartCount} artículos)`}
-            data-ocid="nav.toggle"
+            data-ocid="nav.cart_button"
           >
             <ShoppingCart className="w-4 h-4" />
             {cartCount > 0 && (
@@ -160,7 +160,7 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
                   ? "text-gold bg-primary/10"
                   : "text-text-dim hover:text-foreground hover:bg-surface-2"
               }`}
-              data-ocid="nav.admin.link"
+              data-ocid="nav.admin_button"
               aria-label="Panel de administración"
             >
               <Settings className="w-3 h-3" />
@@ -174,7 +174,7 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
               type="button"
               onClick={clear}
               className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-border/30 text-text-dim hover:text-foreground hover:bg-surface-2 flex items-center gap-1.5"
-              data-ocid="nav.logout.button"
+              data-ocid="nav.secondary_button"
               aria-label="Cerrar sesión"
             >
               <LogOut className="w-3 h-3" />
@@ -186,7 +186,7 @@ function Nav({ currentView, onNavigate, onCartOpen }: NavProps) {
               onClick={login}
               disabled={isLoggingIn}
               className="ml-1 px-3 py-1.5 text-xs font-mono uppercase tracking-widest transition-all duration-200 rounded-sm border border-gold/40 text-gold hover:bg-gold/10 hover:border-gold/60 disabled:opacity-50 flex items-center gap-1.5"
-              data-ocid="nav.login.button"
+              data-ocid="nav.login_button"
               aria-label="Iniciar sesión como administrador"
             >
               {isLoggingIn ? (

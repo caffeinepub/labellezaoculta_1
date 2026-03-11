@@ -59,7 +59,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Album, AlbumId, Photo, StripeConfiguration } from "../backend.d";
+import type { Album, Photo, StripeConfiguration } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
@@ -82,6 +82,9 @@ import {
   getImageUrl,
   isDemo,
 } from "../utils/imageUtils";
+
+// AlbumId is always bigint on the backend
+type AlbumId = bigint;
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -1595,7 +1598,7 @@ function PhotosTab({
 
 // ── Auto-Registration Screen ─────────────────────────────────────────────────
 // Called when the user is logged in but isCallerAdmin() returns false.
-// Automatically attempts to register as admin using the token captured at page load.
+// Attempts to call registerAsAdmin() — the first user to call this becomes admin.
 
 function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
   const registerAsAdmin = useRegisterAsAdmin();
@@ -1603,18 +1606,11 @@ function AutoRegisterScreen({ onClear }: { onClear: () => void }) {
 
   const mutate = registerAsAdmin.mutate;
   useEffect(() => {
-    try {
-      mutate(undefined, {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
-        },
-        onError: () => {
-          // Error is rendered below
-        },
-      });
-    } catch {
-      // Guard against any synchronous throw
-    }
+    mutate(undefined, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      },
+    });
   }, [mutate, queryClient]);
 
   // Show access denied message as soon as registration fails
@@ -1814,8 +1810,7 @@ export function AdminPanel() {
     );
   }
 
-  // Logged in but not admin → always attempt auto-registration with the admin token.
-  // useActor may have registered the user as #user before this runs, so we always retry.
+  // Logged in but not admin → attempt auto-registration (first user becomes admin)
   if (!isAdmin) {
     return <AutoRegisterScreen onClear={clear} />;
   }
@@ -1877,6 +1872,13 @@ export function AdminPanel() {
               Fotos
             </TabsTrigger>
             <TabsTrigger
+              value="cover"
+              className="data-[state=active]:bg-surface-3 data-[state=active]:text-foreground text-text-dim font-mono text-xs uppercase tracking-wider"
+              data-ocid="admin.cover.tab"
+            >
+              Portada
+            </TabsTrigger>
+            <TabsTrigger
               value="stripe"
               className="data-[state=active]:bg-surface-3 data-[state=active]:text-foreground text-text-dim font-mono text-xs uppercase tracking-wider"
               data-ocid="admin.stripe.tab"
@@ -1890,12 +1892,191 @@ export function AdminPanel() {
           <TabsContent value="photos">
             <PhotosTab identity={identity} />
           </TabsContent>
+          <TabsContent value="cover">
+            <CoverTab identity={identity} />
+          </TabsContent>
           <TabsContent value="stripe">
             <StripeTab />
           </TabsContent>
         </Tabs>
       </section>
     </main>
+  );
+}
+
+// ── Cover Tab ────────────────────────────────────────────────────────────────
+
+const COVER_BLOBID_KEY = "labellezaoculta_cover_blobid";
+
+function CoverTab({
+  identity,
+}: { identity?: import("@icp-sdk/core/agent").Identity }) {
+  const [coverBlobId, setCoverBlobId] = useState<string | null>(() =>
+    localStorage.getItem(COVER_BLOBID_KEY),
+  );
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load existing cover URL
+  useEffect(() => {
+    if (coverBlobId) {
+      getImageUrl(coverBlobId).then((url) => {
+        if (url) setCoverUrl(url);
+      });
+    }
+  }, [coverBlobId]);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor selecciona una imagen válida");
+      return;
+    }
+    setIsUploading(true);
+    setProgress(0);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const storageClient = await getStorageClient(identity);
+      const { hash } = await storageClient.putFile(bytes, (pct) =>
+        setProgress(pct),
+      );
+      localStorage.setItem(COVER_BLOBID_KEY, hash);
+      setCoverBlobId(hash);
+      const url = await getImageUrl(hash);
+      setCoverUrl(url);
+      toast.success("Foto de portada actualizada");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      toast.error(`Error al subir: ${msg}`);
+    } finally {
+      setIsUploading(false);
+      setProgress(0);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = "";
+  };
+
+  const handleRemove = () => {
+    localStorage.removeItem(COVER_BLOBID_KEY);
+    setCoverBlobId(null);
+    setCoverUrl(null);
+    toast.success("Portada eliminada");
+  };
+
+  return (
+    <div className="space-y-6 max-w-lg" data-ocid="admin.cover.panel">
+      <div>
+        <h2 className="font-display text-lg font-medium text-foreground mb-1">
+          Foto de portada
+        </h2>
+        <p className="text-text-dim text-sm font-sans">
+          Esta imagen se mostrará como fondo en la sección hero de la galería.
+        </p>
+      </div>
+
+      {/* Preview */}
+      {coverUrl && !isUploading && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative rounded-sm overflow-hidden aspect-video border border-border/40"
+        >
+          <img
+            src={coverUrl}
+            alt="Portada actual"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
+            <span className="font-mono text-xs uppercase tracking-widest text-foreground/80">
+              Portada actual
+            </span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Upload zone */}
+      <div
+        className={`relative border-2 border-dashed rounded-sm transition-all duration-200 ${
+          isDragOver
+            ? "border-primary bg-primary/8"
+            : "border-border/50 hover:border-border/80 bg-surface-2/20"
+        } py-10`}
+        onDrop={handleDrop}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        data-ocid="admin.cover.dropzone"
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <button
+          type="button"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+          data-ocid="admin.cover.upload_button"
+          aria-label="Seleccionar imagen de portada"
+        />
+        <div className="flex flex-col items-center gap-3 pointer-events-none">
+          {isUploading ? (
+            <>
+              <Loader2 className="w-7 h-7 text-primary animate-spin" />
+              <p className="text-text-dim text-sm">Subiendo portada...</p>
+              <div className="w-48">
+                <Progress value={progress} className="h-1.5" />
+              </div>
+              <span className="font-mono text-xs text-text-subtle">
+                {progress}%
+              </span>
+            </>
+          ) : (
+            <>
+              <Upload className="w-7 h-7 text-text-dim" />
+              <p className="text-text-dim text-sm">
+                {coverUrl ? "Reemplazar portada" : "Subir foto de portada"}
+              </p>
+              <p className="text-text-subtle text-xs font-mono uppercase tracking-wider">
+                JPG · PNG · WEBP
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Remove cover button */}
+      {coverBlobId && !isUploading && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleRemove}
+          className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-2"
+          data-ocid="admin.cover.delete_button"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Eliminar portada
+        </Button>
+      )}
+    </div>
   );
 }
 
